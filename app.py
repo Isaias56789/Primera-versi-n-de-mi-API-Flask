@@ -18,6 +18,7 @@ db_config = {
     'user': 'root',
     'password': 'YJZUxEKsXZSxiPFlJGverCkCFQuPpHWh',
     'database': 'railway'
+    charset="utf8mb4" 
 }
 
 SECRET_KEY = 'mi_clave_secreta'
