@@ -13,16 +13,18 @@ logging.basicConfig(level=logging.DEBUG)
 
 # Configuración de la base de datos
 db_config = {
-    'host': '35.212.82.162',
-    'port': 13541,
-    'user': 'root',
-    'password': 'YJZUxEKsXZSxiPFlJGverCkCFQuPpHWh',
-    'database': 'railway',
+    'host': os.getenv('DB_HOST', '35.212.82.162'),  # Usa variables de entorno
+    'port': int(os.getenv('DB_PORT', 13541)),
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD', 'YJZUxEKsXZSxiPFlJGverCkCFQuPpHWh'),
+    'database': os.getenv('DB_NAME', 'railway'),
     'charset': 'utf8mb4',
     'collation': 'utf8mb4_unicode_ci',
-    'auth_plugin': 'mysql_native_password',  # Soluciona problemas de autenticación
-    'connect_timeout': 10,  # Añade timeout para evitar bloqueos
-    'ssl_disabled': True  # Railway a veces requiere esto
+    'auth_plugin': 'mysql_native_password',
+    'ssl_disabled': True,  # Necesario para Railway en algunas configuraciones
+    'pool_name': 'mypool',  # Conexión pooling
+    'pool_size': 5,
+    'pool_reset_session': True
 }
 
 SECRET_KEY = 'mi_clave_secreta'
