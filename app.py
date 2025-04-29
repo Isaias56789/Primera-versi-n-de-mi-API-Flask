@@ -31,15 +31,23 @@ SECRET_KEY = 'mi_clave_secreta'
 
 # Función para obtener la conexión a la base de datos
 def get_db_connection():
-    try:
-        app.logger.debug("Intentando conectar con la base de datos...")
-        conn = mysql.connector.connect(**db_config)
-        app.logger.debug("Conexión exitosa con la base de datos.")
-        return conn
-    except mysql.connector.Error as err:
-        app.logger.error(f"Error al conectar con la base de datos: {err}")
-        raise
-
+    max_retries = 3
+    attempt = 0
+    
+    while attempt < max_retries:
+        try:
+            conn = mysql.connector.connect(**db_config)
+            # Verificación activa de la conexión
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.close()
+            return conn
+        except mysql.connector.Error as err:
+            attempt += 1
+            app.logger.error(f"Intento {attempt} fallido: {err}")
+            if attempt == max_retries:
+                raise RuntimeError(f"No se pudo conectar a la base de datos después de {max_retries} intentos")
+            time.sleep(2)  # Espera entre reintentos
 # Ruta para el login
 @app.route('/login', methods=['POST'])
 def login():
