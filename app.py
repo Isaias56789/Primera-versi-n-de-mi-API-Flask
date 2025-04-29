@@ -17,8 +17,8 @@ db_config = {
     'port': 13541,
     'user': 'root',
     'password': 'YJZUxEKsXZSxiPFlJGverCkCFQuPpHWh',
-    'database': 'railway'
-    charset="utf8mb4" 
+    'database': 'railway',
+    'charset':'utf8mb4',
 }
 
 SECRET_KEY = 'mi_clave_secreta'
