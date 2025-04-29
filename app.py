@@ -6,6 +6,8 @@ import os
 
 app = Flask(__name__)
 
+SECRET_KEY = 'mi_clave_secreta'
+
 def get_db_connection():
     return mysql.connector.connect(
         host=os.getenv('MYSQLHOST'),
@@ -15,12 +17,6 @@ def get_db_connection():
         database=os.getenv('MYSQLDATABASE')
     )
 
-
-SECRET_KEY = 'mi_clave_secreta'
-
-def get_db_connection():
-    return mysql.connector.connect(**db_config)
-
 @app.route('/login', methods=['POST'])
 def login():
     try:
@@ -29,22 +25,27 @@ def login():
         password = data['password']
     except KeyError as e:
         return jsonify({'message': f'Missing parameter: {str(e)}'}), 400
+    except Exception as e:
+        return jsonify({'message': 'Error en la petición', 'error': str(e)}), 400
 
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT id, email, role FROM users WHERE email = %s AND password = %s", (email, password))
-    user = cursor.fetchone()
-    cursor.close()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id, email, role FROM users WHERE email = %s AND password = %s", (email, password))
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
 
-    if user:
-        token = jwt.encode({
-            'user_id': user['id'],
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
-        }, SECRET_KEY, algorithm='HS256')
-        return jsonify({'token': token})
-    else:
-        return jsonify({'message': 'Credenciales inválidas'}), 401
+        if user:
+            token = jwt.encode({
+                'user_id': user['id'],
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+            }, SECRET_KEY, algorithm='HS256')
+            return jsonify({'token': token})
+        else:
+            return jsonify({'message': 'Credenciales inválidas'}), 401
+    except Exception as e:
+        return jsonify({'message': 'Error interno del servidor', 'error': str(e)}), 500
 
 @app.route('/user/profile', methods=['GET'])
 def user_profile():
@@ -61,18 +62,20 @@ def user_profile():
     except jwt.InvalidTokenError:
         return jsonify({'message': 'Token inválido'}), 401
 
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT id, email, role FROM users WHERE id = %s", (user_id,))
-    user = cursor.fetchone()
-    cursor.close()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT id, email, role FROM users WHERE id = %s", (user_id,))
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
 
-    if user:
-        return jsonify(user)
-    else:
-        return jsonify({'message': 'Usuario no encontrado'}), 404
+        if user:
+            return jsonify(user)
+        else:
+            return jsonify({'message': 'Usuario no encontrado'}), 404
+    except Exception as e:
+        return jsonify({'message': 'Error interno del servidor', 'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
-
