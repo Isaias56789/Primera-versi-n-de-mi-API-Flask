@@ -3,10 +3,10 @@ import mysql.connector
 import jwt
 import datetime
 from flask import Flask, request, jsonify
-from werkzeug.security import check_password_hash
 
 # Configurar la aplicación Flask
 app = Flask(__name__)
+app.config['DEBUG'] = True
 
 # Configurar logging
 logging.basicConfig(level=logging.DEBUG)
@@ -18,7 +18,7 @@ db_config = {
     'user': 'root',
     'password': 'YJZUxEKsXZSxiPFlJGverCkCFQuPpHWh',
     'database': 'railway',
-    'charset':'utf8mb4',
+    'charset': 'utf8mb4',
 }
 
 SECRET_KEY = 'mi_clave_secreta'
@@ -44,15 +44,15 @@ def login():
         email = data['email']
         password = data['password']
     except KeyError as e:
-        app.logger.error(f'Missing parameter: {str(e)}')
-        return jsonify({'message': f'Missing parameter: {str(e)}'}), 400
+        app.logger.error(f'Falta el parámetro: {str(e)}')
+        return jsonify({'message': f'Falta el parámetro: {str(e)}'}), 400
     except ValueError as e:
-        app.logger.error(f'Invalid input: {str(e)}')
-        return jsonify({'message': f'Invalid input: {str(e)}'}), 400
+        app.logger.error(f'Entrada inválida: {str(e)}')
+        return jsonify({'message': f'Entrada inválida: {str(e)}'}), 400
     except Exception as e:
-        app.logger.error(f'Unexpected error processing data: {str(e)}')
-        return jsonify({'message': f'Unexpected error processing data: {str(e)}'}), 500
-    
+        app.logger.error(f'Error inesperado procesando datos: {str(e)}')
+        return jsonify({'message': f'Error inesperado: {str(e)}'}), 500
+
     try:
         # Establecer la conexión a la base de datos
         conn = get_db_connection()
@@ -62,8 +62,8 @@ def login():
         cursor.close()
         conn.close()
 
-        # Verificar si se encontró al usuario y si la contraseña es correcta
-        if user and check_password_hash(user['password'], password):
+        # Verificar si se encontró al usuario y si la contraseña es correcta (sin hash)
+        if user and user['password'] == password:
             token = jwt.encode({
                 'user_id': user['id'],
                 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
@@ -71,41 +71,40 @@ def login():
             app.logger.debug(f'Token generado: {token}')
             return jsonify({'token': token})
         else:
-            app.logger.warning(f"Invalid credentials for email: {email}")
+            app.logger.warning(f"Credenciales inválidas para email: {email}")
             return jsonify({'message': 'Credenciales inválidas'}), 401
     except mysql.connector.Error as err:
-        app.logger.error(f"Database error during login: {err}")
-        return jsonify({'message': f'Database error: {err}'}), 500
+        app.logger.error(f"Error de base de datos durante el login: {err}")
+        return jsonify({'message': f'Error de base de datos: {err}'}), 500
     except jwt.PyJWTError as err:
-        app.logger.error(f"JWT error: {err}")
-        return jsonify({'message': 'Error generating JWT token'}), 500
+        app.logger.error(f"Error al generar token JWT: {err}")
+        return jsonify({'message': 'Error generando token JWT'}), 500
     except Exception as e:
-        app.logger.error(f'Unexpected error: {str(e)}')
-        return jsonify({'message': f'Unexpected error: {str(e)}'}), 500
+        app.logger.error(f'Error inesperado: {str(e)}')
+        return jsonify({'message': f'Error inesperado: {str(e)}'}), 500
 
 # Ruta para obtener el perfil del usuario
 @app.route('/user/profile', methods=['GET'])
 def user_profile():
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith('Bearer '):
-        app.logger.warning('Missing or invalid token')
-        return jsonify({'message': 'Missing or invalid token'}), 401
+        app.logger.warning('Token ausente o inválido')
+        return jsonify({'message': 'Token ausente o inválido'}), 401
 
     token = auth_header.split(' ')[1]
     try:
         decoded = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
         user_id = decoded['user_id']
     except jwt.ExpiredSignatureError:
-        app.logger.warning('JWT token expired')
+        app.logger.warning('Token JWT expirado')
         return jsonify({'message': 'Token expirado'}), 401
     except jwt.InvalidTokenError as e:
-        app.logger.error(f'Invalid JWT token: {str(e)}')
+        app.logger.error(f'Token JWT inválido: {str(e)}')
         return jsonify({'message': 'Token inválido'}), 401
     except Exception as e:
-        app.logger.error(f'Unexpected error decoding token: {str(e)}')
-        return jsonify({'message': 'Error decoding token'}), 500
+        app.logger.error(f'Error inesperado decodificando token: {str(e)}')
+        return jsonify({'message': 'Error decodificando token'}), 500
 
-    # Obtener los datos del usuario
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -119,11 +118,11 @@ def user_profile():
         else:
             return jsonify({'message': 'Usuario no encontrado'}), 404
     except mysql.connector.Error as err:
-        app.logger.error(f"Database error during profile retrieval: {err}")
-        return jsonify({'message': f'Database error: {err}'}), 500
+        app.logger.error(f"Error de base de datos al recuperar perfil: {err}")
+        return jsonify({'message': f'Error de base de datos: {err}'}), 500
     except Exception as e:
-        app.logger.error(f'Unexpected error retrieving profile: {str(e)}')
-        return jsonify({'message': f'Unexpected error: {str(e)}'}), 500
+        app.logger.error(f'Error inesperado recuperando perfil: {str(e)}')
+        return jsonify({'message': f'Error inesperado: {str(e)}'}), 500
 
 # Iniciar la aplicación
 if __name__ == '__main__':
