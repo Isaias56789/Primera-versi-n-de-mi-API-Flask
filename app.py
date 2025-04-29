@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 # Configuración de la base de datos
 db_config = {
-    'host': os.getenv('DB_HOST', '35.212.82.162'),  # Usa variables de entorno
+    'host': os.getenv('DB_HOST', '35.212.82.162'),
     'port': int(os.getenv('DB_PORT', 13541)),
     'user': os.getenv('DB_USER', 'root'),
     'password': os.getenv('DB_PASSWORD', 'YJZUxEKsXZSxiPFlJGverCkCFQuPpHWh'),
@@ -22,10 +22,12 @@ db_config = {
     'charset': 'utf8mb4',
     'collation': 'utf8mb4_unicode_ci',
     'auth_plugin': 'mysql_native_password',
-    'ssl_disabled': True,  # Necesario para Railway en algunas configuraciones
-    'pool_name': 'mypool',  # Conexión pooling
+    'ssl_disabled': True,
+    'pool_name': 'mypool',
     'pool_size': 5,
-    'pool_reset_session': True
+    'pool_reset_session': True,
+    'buffered': True,  # <-- Añade esto
+    'consume_results': True  # <-- Añade esto
 }
 
 SECRET_KEY = 'mi_clave_secreta'
@@ -38,17 +40,28 @@ def get_db_connection():
     while attempt < max_retries:
         try:
             conn = mysql.connector.connect(**db_config)
-            # Verificación activa de la conexión
-            cursor = conn.cursor()
+            # Verificación activa con limpieza de resultados
+            cursor = conn.cursor(buffered=True)  # <-- Añade buffered=True
             cursor.execute("SELECT 1")
+            cursor.fetchall()  # <-- Asegúrate de leer todos los resultados
             cursor.close()
-            return conn
+            conn.close()  # <-- Cierra la conexión de verificación
+            
+            # Crea una nueva conexión limpia para usar
+            clean_conn = mysql.connector.connect(**db_config)
+            return clean_conn
         except mysql.connector.Error as err:
             attempt += 1
             app.logger.error(f"Intento {attempt} fallido: {err}")
+            # Limpia cualquier conexión residual
+            try:
+                if 'conn' in locals():
+                    conn.close()
+            except:
+                pass
             if attempt == max_retries:
                 raise RuntimeError(f"No se pudo conectar a la base de datos después de {max_retries} intentos")
-            time.sleep(2)  # Espera entre reintentos
+            time.sleep(2)
 # Ruta para el login
 @app.route('/login', methods=['POST'])
 def login():
