@@ -1,9 +1,10 @@
+import os  # <-- Este es el que falta
+import time  # <-- También necesario para los reintentos
 import logging
 import mysql.connector
 import jwt
 import datetime
 from flask import Flask, request, jsonify
-
 # Configurar la aplicación Flask
 app = Flask(__name__)
 app.config['DEBUG'] = True
