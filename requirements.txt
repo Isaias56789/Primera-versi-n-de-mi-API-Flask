@@ -3,3 +3,4 @@ mysql-connector-python==8.0.31
 python-dotenv==0.21.0
 pyjwt==2.5.0
 gunicorn==20.1.0
+werkzeug==2.2.3  # Versión compatible
