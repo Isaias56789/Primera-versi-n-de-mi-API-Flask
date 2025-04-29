@@ -18,7 +18,11 @@ db_config = {
     'user': 'root',
     'password': 'YJZUxEKsXZSxiPFlJGverCkCFQuPpHWh',
     'database': 'railway',
-    'charset': 'utf8mb4'
+    'charset': 'utf8mb4',
+    'collation': 'utf8mb4_unicode_ci',
+    'auth_plugin': 'mysql_native_password',  # Soluciona problemas de autenticación
+    'connect_timeout': 10,  # Añade timeout para evitar bloqueos
+    'ssl_disabled': True  # Railway a veces requiere esto
 }
 
 SECRET_KEY = 'mi_clave_secreta'
