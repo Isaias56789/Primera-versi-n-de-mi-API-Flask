@@ -6,15 +6,14 @@ import os
 
 app = Flask(__name__)
 
-
-
-db_config = {
-    'host': '35.212.82.162',
-    'port': 13541,
-    'user': 'root',
-    'password': 'YJZUxEKsXZSxiPFlJGverCkCFQuPpHWh',
-    'database': 'railway'
-}
+def get_db_connection():
+    return mysql.connector.connect(
+        host=os.getenv('MYSQLHOST'),
+        port=int(os.getenv('MYSQLPORT')),
+        user=os.getenv('MYSQLUSER'),
+        password=os.getenv('MYSQLPASSWORD'),
+        database=os.getenv('MYSQLDATABASE')
+    )
 
 SECRET_KEY = os.getenv('SECRET_KEY')
 
