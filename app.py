@@ -81,14 +81,13 @@ def login():
         app.logger.error(f'Error inesperado procesando datos: {str(e)}')
         return jsonify({'message': f'Error inesperado: {str(e)}'}), 500
 
-    try:
-        # Establecer la conexión a la base de datos
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, email, role, password FROM users WHERE email = %s", (email,))
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
+try:
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True, buffered=True)  # <-- Añade buffered
+    cursor.execute("SELECT id, email, role, password FROM users WHERE email = %s", (email,))
+    user = cursor.fetchone()  # <-- Asegúrate de leer el resultado
+    cursor.close()  # <-- Cierra el cursor
+    conn.close()
 
         # Verificar si se encontró al usuario y si la contraseña es correcta (sin hash)
         if user and user['password'] == password:
