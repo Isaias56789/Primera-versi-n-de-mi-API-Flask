@@ -2,16 +2,21 @@ from flask import Flask, request, jsonify
 import mysql.connector
 import jwt
 import datetime
+import os
 
 app = Flask(__name__)
 
+
+
 db_config = {
-    'host': '35.212.82.162',
-    'port': 13541,
-    'user': 'root',
-    'password': 'YJZUxEKsXZSxiPFlJGverCkCFQuPpHWh',
-    'database': 'railway'
+    'host': os.getenv('DB_HOST'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'database': os.getenv('DB_NAME')
 }
+
+SECRET_KEY = os.getenv('SECRET_KEY')
+
 
 SECRET_KEY = 'mi_clave_secreta'
 
