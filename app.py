@@ -1,168 +1,158 @@
-import os
-import time
-import logging
-import mysql.connector
-import jwt
-import datetime
 from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from flask_marshmallow import Marshmallow
+from flask_cors import CORS
+from flask_jwt_extended import JWTExtended, jwt_required, create_access_token, get_jwt_identity
+import os
 
-# Configurar la aplicación Flask
 app = Flask(__name__)
-app.config['DEBUG'] = True if os.getenv('FLASK_ENV') == 'development' else False
-
-# Configurar logging
-logging.basicConfig(level=logging.DEBUG)
+CORS(app)
+basedir = os.path.abspath(os.path.dirname(__file__))
 
 # Configuración de la base de datos
-db_config = {
-    'host': os.getenv('DB_HOST', '35.212.82.162'),
-    'port': int(os.getenv('DB_PORT', 13541)),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', 'YJZUxEKsXZSxiPFlJGverCkCFQuPpHWh'),
-    'database': os.getenv('DB_NAME', 'railway'),
-    'charset': 'utf8mb4',
-    'collation': 'utf8mb4_unicode_ci',
-    'auth_plugin': 'mysql_native_password',
-    'ssl_disabled': True,
-    'pool_name': 'mypool',
-    'pool_size': 5,
-    'pool_reset_session': True,
-    'buffered': True,
-    'consume_results': True
-}
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://usuario:contraseña@localhost/Perfectura'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['JWT_SECRET_KEY'] = 'super-secret-key'  # Cambia esto en producción
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'mi_clave_secreta_por_defecto')
+db = SQLAlchemy(app)
+ma = Marshmallow(app)
+jwt = JWTExtended(app)
 
-# Función para obtener la conexión a la base de datos
-def get_db_connection():
-    max_retries = 3
-    attempt = 0
-    
-    while attempt < max_retries:
-        try:
-            conn = mysql.connector.connect(**db_config)
-            # Verificación activa con limpieza de resultados
-            cursor = conn.cursor(buffered=True)
-            cursor.execute("SELECT 1")
-            cursor.fetchall()  # Asegúrate de leer todos los resultados
-            cursor.close()
-            conn.close()  # Cierra la conexión de verificación
-            
-            # Crea una nueva conexión limpia para usar
-            clean_conn = mysql.connector.connect(**db_config)
-            return clean_conn
-        except mysql.connector.Error as err:
-            attempt += 1
-            app.logger.error(f"Intento {attempt} fallido: {err}")
-            # Limpia cualquier conexión residual
-            try:
-                if 'conn' in locals():
-                    conn.close()
-            except:
-                pass
-            if attempt == max_retries:
-                raise RuntimeError(f"No se pudo conectar a la base de datos después de {max_retries} intentos")
-            time.sleep(2)
+# Modelos
+class Maestro(db.Model):
+    __tablename__ = 'maestros'
+    id_maestro = db.Column(db.BigInteger, primary_key=True)
+    nombre = db.Column(db.String(255), nullable=False)
+    apellido = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.TIMESTAMP)
+    updated_at = db.Column(db.TIMESTAMP)
+    horarios = db.relationship('Horario', backref='maestro', lazy=True)
 
-@app.route('/')
-def health_check():
-    try:
-        conn = get_db_connection()
-        conn.close()
-        return jsonify({'status': 'healthy', 'database': 'connected'}), 200
-    except Exception as e:
-        return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
+class Asignatura(db.Model):
+    __tablename__ = 'asignaturas'
+    id_asignatura = db.Column(db.BigInteger, primary_key=True)
+    nombre_asignatura = db.Column(db.String(255), nullable=False)
+    clave_asignatura = db.Column(db.String(255), nullable=False)
+    horas_teoricas = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.TIMESTAMP)
+    updated_at = db.Column(db.TIMESTAMP)
+    horarios = db.relationship('Horario', backref='asignatura', lazy=True)
 
-# Ruta para el login
-@app.route('/login', methods=['POST'])
-def login():
-    try:
-        data = request.get_json()
-        if not data:
-            raise ValueError("No JSON data received")
-        email = data['email']
-        password = data['password']
-    except KeyError as e:
-        app.logger.error(f'Falta el parámetro: {str(e)}')
-        return jsonify({'message': f'Falta el parámetro: {str(e)}'}), 400
-    except ValueError as e:
-        app.logger.error(f'Entrada inválida: {str(e)}')
-        return jsonify({'message': f'Entrada inválida: {str(e)}'}), 400
-    except Exception as e:
-        app.logger.error(f'Error inesperado procesando datos: {str(e)}')
-        return jsonify({'message': f'Error inesperado: {str(e)}'}), 500
+class Carrera(db.Model):
+    __tablename__ = 'carreras'
+    id_carrera = db.Column(db.BigInteger, primary_key=True)
+    carrera = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.TIMESTAMP)
+    updated_at = db.Column(db.TIMESTAMP)
+    horarios = db.relationship('Horario', backref='carrera', lazy=True)
 
-    try:
-        # Establecer la conexión a la base de datos
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True, buffered=True)
-        cursor.execute("SELECT id, email, role, password FROM users WHERE email = %s", (email,))
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
+class Grupo(db.Model):
+    __tablename__ = 'grupos'
+    id_grupo = db.Column(db.BigInteger, primary_key=True)
+    grupo = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.TIMESTAMP)
+    updated_at = db.Column(db.TIMESTAMP)
+    horarios = db.relationship('Horario', backref='grupo', lazy=True)
 
-        # Verificar si se encontró al usuario y si la contraseña es correcta (sin hash)
-        if user and user['password'] == password:
-            token = jwt.encode({
-                'user_id': user['id'],
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
-            }, SECRET_KEY, algorithm='HS256')
-            app.logger.debug(f'Token generado: {token}')
-            return jsonify({'token': token})
-        else:
-            app.logger.warning(f"Credenciales inválidas para email: {email}")
-            return jsonify({'message': 'Credenciales inválidas'}), 401
-    except mysql.connector.Error as err:
-        app.logger.error(f"Error de base de datos durante el login: {err}")
-        return jsonify({'message': f'Error de base de datos: {err}'}), 500
-    except jwt.PyJWTError as err:
-        app.logger.error(f"Error al generar token JWT: {err}")
-        return jsonify({'message': 'Error generando token JWT'}), 500
-    except Exception as e:
-        app.logger.error(f'Error inesperado: {str(e)}')
-        return jsonify({'message': f'Error inesperado: {str(e)}'}), 500
+class Aula(db.Model):
+    __tablename__ = 'aulas'
+    id_aula = db.Column(db.BigInteger, primary_key=True)
+    aula = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.TIMESTAMP)
+    updated_at = db.Column(db.TIMESTAMP)
+    horarios = db.relationship('Horario', backref='aula', lazy=True)
 
-# Ruta para obtener el perfil del usuario
-@app.route('/user/profile', methods=['GET'])
-def user_profile():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header or not auth_header.startswith('Bearer '):
-        app.logger.warning('Token ausente o inválido')
-        return jsonify({'message': 'Token ausente o inválido'}), 401
+class Horario(db.Model):
+    __tablename__ = 'horarios'
+    id_horario = db.Column(db.BigInteger, primary_key=True)
+    id_maestro = db.Column(db.BigInteger, db.ForeignKey('maestros.id_maestro'), nullable=False)
+    id_asignatura = db.Column(db.BigInteger, db.ForeignKey('asignaturas.id_asignatura'), nullable=False)
+    id_carrera = db.Column(db.BigInteger, db.ForeignKey('carreras.id_carrera'), nullable=False)
+    id_grupo = db.Column(db.BigInteger, db.ForeignKey('grupos.id_grupo'), nullable=False)
+    id_aula = db.Column(db.BigInteger, db.ForeignKey('aulas.id_aula'), nullable=False)
+    dia = db.Column(db.String(255), nullable=False)
+    hora_inicio = db.Column(db.Time, nullable=False)
+    hora_fin = db.Column(db.Time, nullable=False)
+    created_at = db.Column(db.TIMESTAMP)
+    updated_at = db.Column(db.TIMESTAMP)
+    asistencias = db.relationship('RegistroAsistencia', backref='horario', lazy=True)
 
-    token = auth_header.split(' ')[1]
-    try:
-        decoded = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-        user_id = decoded['user_id']
-    except jwt.ExpiredSignatureError:
-        app.logger.warning('Token JWT expirado')
-        return jsonify({'message': 'Token expirado'}), 401
-    except jwt.InvalidTokenError as e:
-        app.logger.error(f'Token JWT inválido: {str(e)}')
-        return jsonify({'message': 'Token inválido'}), 401
-    except Exception as e:
-        app.logger.error(f'Error inesperado decodificando token: {str(e)}')
-        return jsonify({'message': 'Error decodificando token'}), 500
+class TipoEstado(db.Model):
+    __tablename__ = 'tipo_estados'
+    id_estado = db.Column(db.BigInteger, primary_key=True)
+    estado = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.TIMESTAMP)
+    updated_at = db.Column(db.TIMESTAMP)
+    asistencias = db.relationship('RegistroAsistencia', backref='estado', lazy=True)
 
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT id, email, role FROM users WHERE id = %s", (user_id,))
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
+class RegistroAsistencia(db.Model):
+    __tablename__ = 'registro_asistencias'
+    id_asistencia = db.Column(db.BigInteger, primary_key=True)
+    id_horario = db.Column(db.BigInteger, db.ForeignKey('horarios.id_horario'), nullable=False)
+    id_estado = db.Column(db.BigInteger, db.ForeignKey('tipo_estados.id_estado'), nullable=False)
+    fecha_asistencia = db.Column(db.Date, nullable=False)
+    hora_asistencia = db.Column(db.Time, nullable=False)
+    created_at = db.Column(db.TIMESTAMP)
+    updated_at = db.Column(db.TIMESTAMP)
 
-        if user:
-            return jsonify(user)
-        else:
-            return jsonify({'message': 'Usuario no encontrado'}), 404
-    except mysql.connector.Error as err:
-        app.logger.error(f"Error de base de datos al recuperar perfil: {err}")
-        return jsonify({'message': f'Error de base de datos: {err}'}), 500
-    except Exception as e:
-        app.logger.error(f'Error inesperado recuperando perfil: {str(e)}')
-        return jsonify({'message': f'Error inesperado: {str(e)}'}), 500
+class User(db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.BigInteger, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    email = db.Column(db.String(255), nullable=False, unique=True)
+    password = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(255), nullable=False, default='student')
 
-# Iniciar la aplicación
-if __name__ == '__main__':
-    app.run(debug=app.config['DEBUG'], host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
+# Esquemas
+class MaestroSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = Maestro
+
+class AsignaturaSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = Asignatura
+
+class CarreraSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = Carrera
+
+class GrupoSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = Grupo
+
+class AulaSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = Aula
+
+class HorarioSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = Horario
+    maestro = ma.Nested(MaestroSchema)
+    asignatura = ma.Nested(AsignaturaSchema)
+    carrera = ma.Nested(CarreraSchema)
+    grupo = ma.Nested(GrupoSchema)
+    aula = ma.Nested(AulaSchema)
+
+class TipoEstadoSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = TipoEstado
+
+class RegistroAsistenciaSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = RegistroAsistencia
+    horario = ma.Nested(HorarioSchema)
+    estado = ma.Nested(TipoEstadoSchema)
+
+class UserSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = User
+        exclude = ('password',)
+
+# Inicializar esquemas
+maestro_schema = MaestroSchema()
+maestros_schema = MaestroSchema(many=True)
+
+asignatura_schema = AsignaturaSchema()
+asignaturas_schema = AsignaturaSchema(many=True)
+
+carrera_schema = Carr
