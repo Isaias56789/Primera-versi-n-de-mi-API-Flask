@@ -1,13 +1,14 @@
-import os  # <-- Este es el que falta
-import time  # <-- También necesario para los reintentos
+import os
+import time
 import logging
 import mysql.connector
 import jwt
 import datetime
 from flask import Flask, request, jsonify
+
 # Configurar la aplicación Flask
 app = Flask(__name__)
-app.config['DEBUG'] = True
+app.config['DEBUG'] = True if os.getenv('FLASK_ENV') == 'development' else False
 
 # Configurar logging
 logging.basicConfig(level=logging.DEBUG)
@@ -26,11 +27,11 @@ db_config = {
     'pool_name': 'mypool',
     'pool_size': 5,
     'pool_reset_session': True,
-    'buffered': True,  # <-- Añade esto
-    'consume_results': True  # <-- Añade esto
+    'buffered': True,
+    'consume_results': True
 }
 
-SECRET_KEY = 'mi_clave_secreta'
+SECRET_KEY = os.getenv('SECRET_KEY', 'mi_clave_secreta_por_defecto')
 
 # Función para obtener la conexión a la base de datos
 def get_db_connection():
@@ -41,11 +42,11 @@ def get_db_connection():
         try:
             conn = mysql.connector.connect(**db_config)
             # Verificación activa con limpieza de resultados
-            cursor = conn.cursor(buffered=True)  # <-- Añade buffered=True
+            cursor = conn.cursor(buffered=True)
             cursor.execute("SELECT 1")
-            cursor.fetchall()  # <-- Asegúrate de leer todos los resultados
+            cursor.fetchall()  # Asegúrate de leer todos los resultados
             cursor.close()
-            conn.close()  # <-- Cierra la conexión de verificación
+            conn.close()  # Cierra la conexión de verificación
             
             # Crea una nueva conexión limpia para usar
             clean_conn = mysql.connector.connect(**db_config)
@@ -62,6 +63,16 @@ def get_db_connection():
             if attempt == max_retries:
                 raise RuntimeError(f"No se pudo conectar a la base de datos después de {max_retries} intentos")
             time.sleep(2)
+
+@app.route('/')
+def health_check():
+    try:
+        conn = get_db_connection()
+        conn.close()
+        return jsonify({'status': 'healthy', 'database': 'connected'}), 200
+    except Exception as e:
+        return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
+
 # Ruta para el login
 @app.route('/login', methods=['POST'])
 def login():
@@ -81,13 +92,14 @@ def login():
         app.logger.error(f'Error inesperado procesando datos: {str(e)}')
         return jsonify({'message': f'Error inesperado: {str(e)}'}), 500
 
-try:
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True, buffered=True)  # <-- Añade buffered
-    cursor.execute("SELECT id, email, role, password FROM users WHERE email = %s", (email,))
-    user = cursor.fetchone()  # <-- Asegúrate de leer el resultado
-    cursor.close()  # <-- Cierra el cursor
-    conn.close()
+    try:
+        # Establecer la conexión a la base de datos
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True, buffered=True)
+        cursor.execute("SELECT id, email, role, password FROM users WHERE email = %s", (email,))
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
 
         # Verificar si se encontró al usuario y si la contraseña es correcta (sin hash)
         if user and user['password'] == password:
@@ -153,4 +165,4 @@ def user_profile():
 
 # Iniciar la aplicación
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=app.config['DEBUG'], host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
