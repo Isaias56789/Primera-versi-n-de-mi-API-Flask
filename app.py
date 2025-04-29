@@ -15,8 +15,6 @@ def get_db_connection():
         database=os.getenv('MYSQLDATABASE')
     )
 
-SECRET_KEY = os.getenv('SECRET_KEY')
-
 
 SECRET_KEY = 'mi_clave_secreta'
 
