@@ -776,12 +776,9 @@ def get_horarios(current_user_id):
         """
         horarios = execute_query(query, fetch_all=True)
         return jsonify(horarios)
-    except mysql.connector.Error as err:
-        app.logger.error(f'Error de base de datos obteniendo horarios: {str(err)}', exc_info=True)
-        return jsonify({'message': 'Error obteniendo horarios'}), 500
     except Exception as e:
-        app.logger.error(f'Error inesperado obteniendo horarios: {str(e)}', exc_info=True)
-        return jsonify({'message': 'Error interno del servidor'}), 500
+        app.logger.error(f'Error obteniendo horarios: {str(e)}')
+        return jsonify({'message': 'Error obteniendo horarios'}), 500
 
 @app.route('/horarios/<int:id>', methods=['GET'])
 @token_required(['administrador', 'prefecto'])
