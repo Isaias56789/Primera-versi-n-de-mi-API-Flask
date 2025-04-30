@@ -765,9 +765,11 @@ def delete_grupo(current_user_id, id):
 # ==============================================
 # CRUD para Horarios
 # ==============================================
+
 @app.route('/horarios', methods=['POST'])
 @token_required(['administrador'])
 def create_horario(current_user_id):
+    """Endpoint único para crear horarios"""
     try:
         data = request.get_json()
         
@@ -775,7 +777,7 @@ def create_horario(current_user_id):
         required_fields = {
             'id_maestro': 'maestros',
             'id_asignatura': 'asignaturas',
-            'id_carrera': 'carreras',
+            'id_carrera': 'carreras', 
             'id_grupo': 'grupos',
             'id_aula': 'aulas',
             'dia': None,
@@ -783,7 +785,7 @@ def create_horario(current_user_id):
             'hora_fin': None
         }
         
-        # Verificar campos requeridos
+        # Verificar campos faltantes
         missing_fields = [field for field in required_fields if field not in data]
         if missing_fields:
             return jsonify({
@@ -791,12 +793,11 @@ def create_horario(current_user_id):
                 'missing': missing_fields
             }), 400
         
-        # Validar que las referencias existan
+        # Validar referencias
         ref_errors = []
         for field, table in required_fields.items():
-            if table:  # Solo validar campos que tienen tabla de referencia
-                if not referencia_existe(table, data[field]):
-                    ref_errors.append(f"El {field.replace('_', ' ')} no existe")
+            if table and not referencia_existe(table, data[field]):
+                ref_errors.append(f'Referencia no encontrada: {field}')
         
         if ref_errors:
             return jsonify({
@@ -804,6 +805,57 @@ def create_horario(current_user_id):
                 'errors': ref_errors
             }), 400
         
+        # Validar formato de horas
+        try:
+            hora_inicio = datetime.strptime(data['hora_inicio'], '%H:%M').time()
+            hora_fin = datetime.strptime(data['hora_fin'], '%H:%M').time()
+            if hora_inicio >= hora_fin:
+                return jsonify({
+                    'message': 'La hora de fin debe ser posterior a la hora de inicio'
+                }), 400
+        except ValueError:
+            return jsonify({
+                'message': 'Formato de hora inválido (use HH:MM)'
+            }), 400
+
+        # Insertar el horario
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """INSERT INTO horarios 
+            (id_maestro, id_asignatura, id_carrera, id_grupo, id_aula, dia, hora_inicio, hora_fin) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                data['id_maestro'], data['id_asignatura'], data['id_carrera'],
+                data['id_grupo'], data['id_aula'], data['dia'],
+                data['hora_inicio'], data['hora_fin']
+            )
+        )
+        conn.commit()
+        horario_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'message': 'Horario creado exitosamente',
+            'id': horario_id
+        }), 201
+        
+    except mysql.connector.Error as err:
+        app.logger.error(f'Error de base de datos: {str(err)}')
+        return jsonify({
+            'message': 'Error de base de datos',
+            'details': str(err)
+        }), 500
+    except Exception as e:
+        app.logger.error(f'Error inesperado: {str(e)}')
+        return jsonify({
+            'message': 'Error interno del servidor',
+            'details': str(e)
+        }), 500
+
+# ... [mantén las otras funciones GET, PUT, DELETE como están] ...
         
 @app.route('/horarios/<int:id>', methods=['GET'])
 @token_required(['administrador', 'prefecto'])
