@@ -7,8 +7,10 @@ from flask import Flask, request, jsonify
 from functools import wraps
 from datetime import datetime, timedelta, date
 
+# Crear un objeto timedelta
+tiempo_delta = timedelta(days=1)
 
-
+timedelta(days=1)
 
 
 # Configurar la aplicación Flask
