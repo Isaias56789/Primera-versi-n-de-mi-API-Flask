@@ -812,6 +812,7 @@ def create_horario(current_user_id):
         try:
             hora_inicio = datetime.strptime(data['hora_inicio'], '%H:%M').time()
             hora_fin = datetime.strptime(data['hora_fin'], '%H:%M').time()
+
             if hora_inicio >= hora_fin:
                 return jsonify({
                     'message': 'La hora de fin debe ser posterior a la hora de inicio'
