@@ -718,9 +718,6 @@ def delete_grupo(current_user_id, id):
 @token_required(['administrador', 'prefecto'])
 def get_horarios(current_user_id):
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        
         query = """
         SELECT h.*, 
                m.nombre as maestro_nombre, m.apellido as maestro_apellido,
@@ -735,22 +732,19 @@ def get_horarios(current_user_id):
         JOIN grupos g ON h.id_grupo = g.id_grupo
         JOIN aulas au ON h.id_aula = au.id_aula
         """
-        cursor.execute(query)
-        horarios = cursor.fetchall()
-        cursor.close()
-        conn.close()
+        horarios = execute_query(query, fetch_all=True)
         return jsonify(horarios)
-    except Exception as e:
-        app.logger.error(f'Error obteniendo horarios: {str(e)}')
+    except mysql.connector.Error as err:
+        app.logger.error(f'Error de base de datos obteniendo horarios: {str(err)}', exc_info=True)
         return jsonify({'message': 'Error obteniendo horarios'}), 500
+    except Exception as e:
+        app.logger.error(f'Error inesperado obteniendo horarios: {str(e)}', exc_info=True)
+        return jsonify({'message': 'Error interno del servidor'}), 500
 
 @app.route('/horarios/<int:id>', methods=['GET'])
 @token_required(['administrador', 'prefecto'])
 def get_horario(current_user_id, id):
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        
         query = """
         SELECT h.*, 
                m.nombre as maestro_nombre, m.apellido as maestro_apellido,
@@ -766,54 +760,101 @@ def get_horario(current_user_id, id):
         JOIN aulas au ON h.id_aula = au.id_aula
         WHERE h.id_horario = %s
         """
-        cursor.execute(query, (id,))
-        horario = cursor.fetchone()
-        cursor.close()
-        conn.close()
+        horario = execute_query(query, (id,), fetch_one=True)
         
-        if horario:
-            return jsonify(horario)
-        else:
+        if not horario:
             return jsonify({'message': 'Horario no encontrado'}), 404
-    except Exception as e:
-        app.logger.error(f'Error obteniendo horario: {str(e)}')
+        return jsonify(horario)
+    except mysql.connector.Error as err:
+        app.logger.error(f'Error de base de datos obteniendo horario: {str(err)}', exc_info=True)
         return jsonify({'message': 'Error obteniendo horario'}), 500
+    except Exception as e:
+        app.logger.error(f'Error inesperado obteniendo horario: {str(e)}', exc_info=True)
+        return jsonify({'message': 'Error interno del servidor'}), 500
 
 @app.route('/horarios', methods=['POST'])
 @token_required(['administrador'])
 def create_horario(current_user_id):
     try:
         data = request.get_json()
-        conn = get_db_connection()
-        cursor = conn.cursor()
         
-        cursor.execute(
+        # Validación de campos requeridos
+        required_fields = [
+            'id_maestro', 'id_asignatura', 'id_carrera', 
+            'id_grupo', 'id_aula', 'dia', 
+            'hora_inicio', 'hora_fin'
+        ]
+        
+        if not all(field in data for field in required_fields):
+            return jsonify({'message': 'Faltan campos requeridos'}), 400
+        
+        # Validar que las referencias existan
+        if not all(referencia_existe(field, data[field]) for field in [
+            ('maestros', 'id_maestro'),
+            ('asignaturas', 'id_asignatura'),
+            ('carreras', 'id_carrera'),
+            ('grupos', 'id_grupo'),
+            ('aulas', 'id_aula')
+        ]):
+            return jsonify({'message': 'Una o más referencias no existen'}), 400
+        
+        # Insertar el horario
+        horario_id = execute_query(
             """INSERT INTO horarios 
             (id_maestro, id_asignatura, id_carrera, id_grupo, id_aula, dia, hora_inicio, hora_fin) 
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-            (data['id_maestro'], data['id_asignatura'], data['id_carrera'], 
-             data['id_grupo'], data['id_aula'], data['dia'], 
-             data['hora_inicio'], data['hora_fin'])
+            (
+                data['id_maestro'], data['id_asignatura'], data['id_carrera'],
+                data['id_grupo'], data['id_aula'], data['dia'],
+                data['hora_inicio'], data['hora_fin']
+            ),
+            commit=True
         )
-        conn.commit()
-        horario_id = cursor.lastrowid
-        cursor.close()
-        conn.close()
         
-        return jsonify({'message': 'Horario creado', 'id': horario_id}), 201
-    except Exception as e:
-        app.logger.error(f'Error creando horario: {str(e)}')
+        return jsonify({
+            'message': 'Horario creado exitosamente',
+            'id': horario_id
+        }), 201
+        
+    except mysql.connector.Error as err:
+        app.logger.error(f'Error de base de datos creando horario: {str(err)}', exc_info=True)
         return jsonify({'message': 'Error creando horario'}), 500
+    except Exception as e:
+        app.logger.error(f'Error inesperado creando horario: {str(e)}', exc_info=True)
+        return jsonify({'message': 'Error interno del servidor'}), 500
 
 @app.route('/horarios/<int:id>', methods=['PUT'])
 @token_required(['administrador'])
 def update_horario(current_user_id, id):
     try:
         data = request.get_json()
-        conn = get_db_connection()
-        cursor = conn.cursor()
         
-        cursor.execute(
+        # Validación de campos requeridos
+        required_fields = [
+            'id_maestro', 'id_asignatura', 'id_carrera', 
+            'id_grupo', 'id_aula', 'dia', 
+            'hora_inicio', 'hora_fin'
+        ]
+        
+        if not all(field in data for field in required_fields):
+            return jsonify({'message': 'Faltan campos requeridos'}), 400
+        
+        # Verificar que el horario existe
+        if not execute_query("SELECT 1 FROM horarios WHERE id_horario = %s", (id,), fetch_one=True):
+            return jsonify({'message': 'Horario no encontrado'}), 404
+        
+        # Validar que las referencias existan
+        if not all(referencia_existe(field, data[field]) for field in [
+            ('maestros', 'id_maestro'),
+            ('asignaturas', 'id_asignatura'),
+            ('carreras', 'id_carrera'),
+            ('grupos', 'id_grupo'),
+            ('aulas', 'id_aula')
+        ]):
+            return jsonify({'message': 'Una o más referencias no existen'}), 400
+        
+        # Actualizar el horario
+        affected_rows = execute_query(
             """UPDATE horarios SET 
             id_maestro = %s, 
             id_asignatura = %s, 
@@ -824,42 +865,68 @@ def update_horario(current_user_id, id):
             hora_inicio = %s, 
             hora_fin = %s 
             WHERE id_horario = %s""",
-            (data['id_maestro'], data['id_asignatura'], data['id_carrera'], 
-             data['id_grupo'], data['id_aula'], data['dia'], 
-             data['hora_inicio'], data['hora_fin'], id)
+            (
+                data['id_maestro'], data['id_asignatura'], data['id_carrera'],
+                data['id_grupo'], data['id_aula'], data['dia'],
+                data['hora_inicio'], data['hora_fin'], id
+            ),
+            commit=True
         )
-        conn.commit()
-        affected_rows = cursor.rowcount
-        cursor.close()
-        conn.close()
         
         if affected_rows == 0:
-            return jsonify({'message': 'Horario no encontrado'}), 404
-        return jsonify({'message': 'Horario actualizado'})
-    except Exception as e:
-        app.logger.error(f'Error actualizando horario: {str(e)}')
+            return jsonify({'message': 'No se realizaron cambios en el horario'}), 200
+        
+        return jsonify({'message': 'Horario actualizado exitosamente'})
+        
+    except mysql.connector.Error as err:
+        app.logger.error(f'Error de base de datos actualizando horario: {str(err)}', exc_info=True)
         return jsonify({'message': 'Error actualizando horario'}), 500
+    except Exception as e:
+        app.logger.error(f'Error inesperado actualizando horario: {str(e)}', exc_info=True)
+        return jsonify({'message': 'Error interno del servidor'}), 500
 
 @app.route('/horarios/<int:id>', methods=['DELETE'])
 @token_required(['administrador'])
 def delete_horario(current_user_id, id):
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        # Verificar que el horario existe
+        if not execute_query("SELECT 1 FROM horarios WHERE id_horario = %s", (id,), fetch_one=True):
+            return jsonify({'message': 'Horario no encontrado'}), 404
         
-        cursor.execute("DELETE FROM horarios WHERE id_horario = %s", (id,))
-        conn.commit()
-        affected_rows = cursor.rowcount
-        cursor.close()
-        conn.close()
+        # Eliminar el horario
+        affected_rows = execute_query(
+            "DELETE FROM horarios WHERE id_horario = %s",
+            (id,),
+            commit=True
+        )
         
         if affected_rows == 0:
-            return jsonify({'message': 'Horario no encontrado'}), 404
-        return jsonify({'message': 'Horario eliminado'})
-    except Exception as e:
-        app.logger.error(f'Error eliminando horario: {str(e)}')
+            return jsonify({'message': 'No se eliminó el horario'}), 200
+        
+        return jsonify({'message': 'Horario eliminado exitosamente'})
+        
+    except mysql.connector.Error as err:
+        if err.errno == 1451:  # Error de clave foránea
+            return jsonify({
+                'message': 'No se puede eliminar el horario porque tiene registros relacionados'
+            }), 400
+        app.logger.error(f'Error de base de datos eliminando horario: {str(err)}', exc_info=True)
         return jsonify({'message': 'Error eliminando horario'}), 500
+    except Exception as e:
+        app.logger.error(f'Error inesperado eliminando horario: {str(e)}', exc_info=True)
+        return jsonify({'message': 'Error interno del servidor'}), 500
 
+# Función auxiliar para verificar referencias
+def referencia_existe(tabla, id_referencia):
+    try:
+        resultado = execute_query(
+            f"SELECT 1 FROM {tabla} WHERE id_{tabla[:-1]} = %s",
+            (id_referencia,),
+            fetch_one=True
+        )
+        return resultado is not None
+    except Exception:
+        return False
 # ==============================================
 # CRUD para Registro de Asistencias
 # ==============================================
