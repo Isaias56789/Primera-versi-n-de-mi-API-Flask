@@ -765,7 +765,6 @@ def delete_grupo(current_user_id, id):
 # ==============================================
 # CRUD para Horarios
 # ==============================================
-
 @app.route('/horarios', methods=['POST'])
 @token_required(['administrador'])
 def create_horario(current_user_id):
@@ -773,60 +772,39 @@ def create_horario(current_user_id):
         data = request.get_json()
         
         # Validación de campos requeridos
-        required_fields = [
-            'id_maestro', 'id_asignatura', 'id_carrera',
-            'id_grupo', 'id_aula', 'dia',
-            'hora_inicio', 'hora_fin'
-        ]
-        
-        if not all(field in data for field in required_fields):
-            return jsonify({'message': 'Faltan campos requeridos'}), 400
-        
-        # Mapeo de campos a tablas
-        field_to_table = {
+        required_fields = {
             'id_maestro': 'maestros',
             'id_asignatura': 'asignaturas',
             'id_carrera': 'carreras',
             'id_grupo': 'grupos',
-            'id_aula': 'aulas'
+            'id_aula': 'aulas',
+            'dia': None,
+            'hora_inicio': None,
+            'hora_fin': None
         }
         
-        # Validar referencias
-        for field, table in field_to_table.items():
-            if not referencia_existe(table, data[field]):
-                return jsonify({
-                    'message': f'Referencia no encontrada: {field}',
-                    'field': field
-                }), 400
+        # Verificar campos requeridos
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            return jsonify({
+                'message': 'Faltan campos requeridos',
+                'missing': missing_fields
+            }), 400
         
-        # Insertar el horario
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        # Validar que las referencias existan
+        ref_errors = []
+        for field, table in required_fields.items():
+            if table:  # Solo validar campos que tienen tabla de referencia
+                if not referencia_existe(table, data[field]):
+                    ref_errors.append(f"El {field.replace('_', ' ')} no existe")
         
-        cursor.execute(
-            """INSERT INTO horarios 
-            (id_maestro, id_asignatura, id_carrera, id_grupo, id_aula, dia, hora_inicio, hora_fin) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-            (
-                data['id_maestro'], data['id_asignatura'], data['id_carrera'],
-                data['id_grupo'], data['id_aula'], data['dia'],
-                data['hora_inicio'], data['hora_fin']
-            )
-        )
-        conn.commit()
-        horario_id = cursor.lastrowid
-        cursor.close()
-        conn.close()
+        if ref_errors:
+            return jsonify({
+                'message': 'Errores en referencias',
+                'errors': ref_errors
+            }), 400
         
-        return jsonify({
-            'message': 'Horario creado exitosamente',
-            'id': horario_id
-        }), 201
         
-    except Exception as e:
-        app.logger.error(f'Error creando horario: {str(e)}')
-        return jsonify({'message': 'Error interno del servidor'}), 500
-
 @app.route('/horarios/<int:id>', methods=['GET'])
 @token_required(['administrador', 'prefecto'])
 def get_horario(current_user_id, id):
