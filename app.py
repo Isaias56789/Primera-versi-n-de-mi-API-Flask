@@ -3,9 +3,10 @@ import time
 import logging
 import mysql.connector
 import jwt
-import datetime
+from datetime import datetime 
 from flask import Flask, request, jsonify
 from functools import wraps
+
 
 # Configurar la aplicación Flask
 app = Flask(__name__)
@@ -817,7 +818,6 @@ def create_horario(current_user_id):
             return jsonify({
                 'message': 'Formato de hora inválido (use HH:MM)'
             }), 400
-
         # Insertar el horario
         conn = get_db_connection()
         cursor = conn.cursor()
