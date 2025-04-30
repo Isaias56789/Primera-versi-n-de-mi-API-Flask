@@ -787,7 +787,7 @@ def get_horarios(current_user_id):
         horarios = execute_query(query, fetch_all=True)
         return jsonify(horarios)
     except Exception as e:
-        app.logger.error(f'Error obteniendo horarios: {str(e)}')
+        app.logger.error(f'Error obteniendo horarios: {str(e)}', exc_info=True)
         return jsonify({'message': 'Error obteniendo horarios'}), 500
 
 @app.route('/horarios/<int:id>', methods=['GET'])
