@@ -3,10 +3,10 @@ import time
 import logging
 import mysql.connector
 import jwt
-from datetime import datetime, timedelta, time
+from datetime
 from flask import Flask, request, jsonify
 from functools import wraps
-import logging
+
 
 # Configurar la aplicación Flask
 app = Flask(__name__)
