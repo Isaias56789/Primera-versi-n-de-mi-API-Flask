@@ -6,6 +6,7 @@ import jwt
 import datetime
 from flask import Flask, request, jsonify
 from functools import wraps
+from datetime import datetime, timedelta
 
 
 
@@ -199,7 +200,7 @@ def login():
         if user and user['password'] == password:
             token = jwt.encode({
                 'user_id': user['id'],
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+                'exp': datetime.utcnow() + timedelta(hours=1)
             }, SECRET_KEY, algorithm='HS256')
             app.logger.debug(f'Token generado: {token}')
             return jsonify({'token': token, 'role': user['role']})
