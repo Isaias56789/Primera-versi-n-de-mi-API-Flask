@@ -1002,6 +1002,7 @@ def referencia_existe(tabla, id_referencia):
         return False
 
 
+
 # ==============================================
 # CRUD para Registro de Asistencias
 # ==============================================
