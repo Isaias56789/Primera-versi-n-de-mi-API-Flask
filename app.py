@@ -34,6 +34,48 @@ db_config = {
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'mi_clave_secreta_por_defecto')
 
+def execute_query(query, params=None, fetch_one=False, fetch_all=False, commit=False):
+    """
+    Ejecuta consultas SQL con manejo automático de conexiones
+    
+    Parámetros:
+        query: Consulta SQL
+        params: Tupla de parámetros para la consulta
+        fetch_one: True para obtener un solo registro
+        fetch_all: True para obtener todos los registros
+        commit: True para operaciones que modifican datos
+    
+    Retorna:
+        Resultados de la consulta o filas afectadas
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute(query, params or ())
+        
+        if commit:
+            conn.commit()
+            return cursor.lastrowid if "INSERT" in query.upper() else cursor.rowcount
+        
+        if fetch_one:
+            return cursor.fetchone()
+        elif fetch_all:
+            return cursor.fetchall()
+            
+        return None
+        
+    except mysql.connector.Error as err:
+        app.logger.error(f"Error de base de datos: {err}")
+        raise
+    finally:
+        if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
 # Decorador para verificar el token JWT y el rol
 def token_required(roles=None):
     def decorator(f):
