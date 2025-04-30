@@ -985,29 +985,22 @@ def delete_horario(current_user_id, id):
         return jsonify({'message': 'Error interno del servidor'}), 500
 
 # Función auxiliar para verificar referencias
-# Función auxiliar corregida
-def referencia_existe(tabla, id_referencia):
-    campos = {
-        'maestros': 'id_maestro',
-        'asignaturas': 'id_asignatura',
-        'carreras': 'id_carrera',
-        'grupos': 'id_grupo',
-        'aulas': 'id_aula'
-    }
-    
-    campo_id = campos.get(tabla)
-    if not campo_id:
-        return False  # Tabla no válida
 
+def referencia_existe(tabla, id_referencia):
     try:
+        app.logger.debug(f"Verificando referencia: {tabla}, ID: {id_referencia}")  # Debug
         resultado = execute_query(
-            f"SELECT 1 FROM {tabla} WHERE {campo_id} = %s",
+            f"SELECT 1 FROM {tabla} WHERE id_{tabla[:-1]} = %s",
             (id_referencia,),
             fetch_one=True
         )
+        if resultado:
+            app.logger.debug(f"Referencia encontrada: {tabla}, ID: {id_referencia}")  # Debug
         return resultado is not None
-    except Exception:
+    except Exception as e:
+        app.logger.error(f"Error al verificar referencia {tabla}: {str(e)}")
         return False
+
 
 # ==============================================
 # CRUD para Registro de Asistencias
