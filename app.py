@@ -80,7 +80,7 @@ def convert_datetime_fields(row):
     for key, value in row.items():
         if value is None:
             converted[key] = None
-        elif isinstance(value, (datetime.datetime, datetime.date)):
+        elif isinstance(value, (datetime, date)):
             converted[key] = value.isoformat()
         elif isinstance(value, datetime.timedelta):
             # Convierte timedelta a segundos o string
