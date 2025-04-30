@@ -766,29 +766,66 @@ def delete_grupo(current_user_id, id):
 # CRUD para Horarios
 # ==============================================
 
-@app.route('/horarios', methods=['GET'])
-@token_required(['administrador', 'prefecto'])
-def get_horarios(current_user_id):
+@app.route('/horarios', methods=['POST'])
+@token_required(['administrador'])
+def create_horario(current_user_id):
     try:
-        query = """
-        SELECT h.*, 
-               m.nombre as maestro_nombre, m.apellido as maestro_apellido,
-               a.nombre_asignatura, a.clave_asignatura,
-               c.carrera,
-               g.grupo,
-               au.aula
-        FROM horarios h
-        JOIN maestros m ON h.id_maestro = m.id_maestro
-        JOIN asignaturas a ON h.id_asignatura = a.id_asignatura
-        JOIN carreras c ON h.id_carrera = c.id_carrera
-        JOIN grupos g ON h.id_grupo = g.id_grupo
-        JOIN aulas au ON h.id_aula = au.id_aula
-        """
-        horarios = execute_query(query, fetch_all=True)
-        return jsonify(horarios)
+        data = request.get_json()
+        
+        # Validación de campos requeridos
+        required_fields = [
+            'id_maestro', 'id_asignatura', 'id_carrera',
+            'id_grupo', 'id_aula', 'dia',
+            'hora_inicio', 'hora_fin'
+        ]
+        
+        if not all(field in data for field in required_fields):
+            return jsonify({'message': 'Faltan campos requeridos'}), 400
+        
+        # Mapeo de campos a tablas
+        field_to_table = {
+            'id_maestro': 'maestros',
+            'id_asignatura': 'asignaturas',
+            'id_carrera': 'carreras',
+            'id_grupo': 'grupos',
+            'id_aula': 'aulas'
+        }
+        
+        # Validar referencias
+        for field, table in field_to_table.items():
+            if not referencia_existe(table, data[field]):
+                return jsonify({
+                    'message': f'Referencia no encontrada: {field}',
+                    'field': field
+                }), 400
+        
+        # Insertar el horario
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """INSERT INTO horarios 
+            (id_maestro, id_asignatura, id_carrera, id_grupo, id_aula, dia, hora_inicio, hora_fin) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                data['id_maestro'], data['id_asignatura'], data['id_carrera'],
+                data['id_grupo'], data['id_aula'], data['dia'],
+                data['hora_inicio'], data['hora_fin']
+            )
+        )
+        conn.commit()
+        horario_id = cursor.lastrowid
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            'message': 'Horario creado exitosamente',
+            'id': horario_id
+        }), 201
+        
     except Exception as e:
-        app.logger.error(f'Error obteniendo horarios: {str(e)}', exc_info=True)
-        return jsonify({'message': 'Error obteniendo horarios'}), 500
+        app.logger.error(f'Error creando horario: {str(e)}')
+        return jsonify({'message': 'Error interno del servidor'}), 500
 
 @app.route('/horarios/<int:id>', methods=['GET'])
 @token_required(['administrador', 'prefecto'])
