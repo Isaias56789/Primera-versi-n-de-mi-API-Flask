@@ -862,19 +862,14 @@ def create_horario(current_user_id):
 
 # ... [mantén las otras funciones GET, PUT, DELETE como están] ...
         
-@app.route('/horarios/<int:id>', methods=['GET'])
+@app.route('/horarios', methods=['GET'])
 @token_required(['administrador', 'prefecto'])
-def get_horario(current_user_id, id):
+def get_horarios(current_user_id):
     try:
         query = """
-        SELECT h.id_horario,
-               h.hora_inicio,
-               h.hora_fin,
-               h.dia,
-               m.nombre as maestro_nombre, 
-               m.apellido as maestro_apellido,
-               a.nombre_asignatura, 
-               a.clave_asignatura,
+        SELECT h.*, 
+               m.nombre as maestro_nombre, m.apellido as maestro_apellido,
+               a.nombre_asignatura, a.clave_asignatura,
                c.carrera,
                g.grupo,
                au.aula
@@ -884,29 +879,12 @@ def get_horario(current_user_id, id):
         JOIN carreras c ON h.id_carrera = c.id_carrera
         JOIN grupos g ON h.id_grupo = g.id_grupo
         JOIN aulas au ON h.id_aula = au.id_aula
-        WHERE h.id_horario = %s
         """
-        horario = execute_query(query, (id,), fetch_one=True)
-        
-        if not horario:
-            return jsonify({'message': 'Horario no encontrado'}), 404
-        
-        # Formatear las horas correctamente
-        if isinstance(horario['hora_inicio'], (datetime.time, str)):
-            horario['hora_inicio'] = str(horario['hora_inicio'])
-        
-        if isinstance(horario['hora_fin'], (datetime.time, str)):
-            horario['hora_fin'] = str(horario['hora_fin'])
-        
-        return jsonify(horario)
-        
-    except mysql.connector.Error as err:
-        app.logger.error(f'Error de base de datos obteniendo horario: {str(err)}', exc_info=True)
-        return jsonify({'message': 'Error obteniendo horario'}), 500
+        horarios = execute_query(query, fetch_all=True)
+        return jsonify(horarios)
     except Exception as e:
-        app.logger.error(f'Error inesperado obteniendo horario: {str(e)}', exc_info=True)
-        return jsonify({'message': 'Error interno del servidor'}), 500
-
+        app.logger.error(f'Error obteniendo horarios: {str(e)}', exc_info=True)
+        return jsonify({'message': 'Error obteniendo horarios'}), 500
 
 @app.route('/horarios/<int:id>', methods=['PUT'])
 @token_required(['administrador'])
