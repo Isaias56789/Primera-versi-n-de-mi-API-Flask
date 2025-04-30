@@ -867,9 +867,14 @@ def create_horario(current_user_id):
 def get_horario(current_user_id, id):
     try:
         query = """
-        SELECT h.*, 
-               m.nombre as maestro_nombre, m.apellido as maestro_apellido,
-               a.nombre_asignatura, a.clave_asignatura,
+        SELECT h.id_horario,
+               h.hora_inicio,
+               h.hora_fin,
+               h.dia,
+               m.nombre as maestro_nombre, 
+               m.apellido as maestro_apellido,
+               a.nombre_asignatura, 
+               a.clave_asignatura,
                c.carrera,
                g.grupo,
                au.aula
@@ -886,14 +891,15 @@ def get_horario(current_user_id, id):
         if not horario:
             return jsonify({'message': 'Horario no encontrado'}), 404
         
-        # Convertir los campos hora_inicio y hora_fin a formato string
-        if 'hora_inicio' in horario:
+        # Formatear las horas correctamente
+        if isinstance(horario['hora_inicio'], (datetime.time, str)):
             horario['hora_inicio'] = str(horario['hora_inicio'])
         
-        if 'hora_fin' in horario:
+        if isinstance(horario['hora_fin'], (datetime.time, str)):
             horario['hora_fin'] = str(horario['hora_fin'])
         
         return jsonify(horario)
+        
     except mysql.connector.Error as err:
         app.logger.error(f'Error de base de datos obteniendo horario: {str(err)}', exc_info=True)
         return jsonify({'message': 'Error obteniendo horario'}), 500
