@@ -5,7 +5,8 @@ import mysql.connector
 import jwt
 from flask import Flask, request, jsonify
 from functools import wraps
-from datetime import datetime, timedelta, date
+from datetime import datetime, date, timedelta
+
 
 # Crear un objeto timedelta
 tiempo_delta = timedelta(days=1)
@@ -76,16 +77,16 @@ def execute_query(query, params=None, fetch_one=False, fetch_all=False, commit=F
             conn.close()
 
 def convert_datetime_fields(row):
-    """Convierte campos datetime, date y timedelta a strings"""
+    """Convierte campos datetime, date y timedelta a strings o segundos"""
     converted = {}
     for key, value in row.items():
         if value is None:
             converted[key] = None
         elif isinstance(value, (datetime, date)):
             converted[key] = value.isoformat()
-        elif isinstance(value, datetime.timedelta):
-            # Convierte timedelta a segundos o string
-            converted[key] = str(value)
+        elif isinstance(value, timedelta):
+            # Convierte timedelta a segundos (más útil y consistente)
+            converted[key] = value.total_seconds()
         else:
             converted[key] = value
     return converted
