@@ -35,19 +35,6 @@ db_config = {
 SECRET_KEY = os.getenv('SECRET_KEY', 'mi_clave_secreta_por_defecto')
 
 def execute_query(query, params=None, fetch_one=False, fetch_all=False, commit=False):
-    """
-    Ejecuta consultas SQL con manejo automático de conexiones
-    
-    Parámetros:
-        query: Consulta SQL
-        params: Tupla de parámetros para la consulta
-        fetch_one: True para obtener un solo registro
-        fetch_all: True para obtener todos los registros
-        commit: True para operaciones que modifican datos
-    
-    Retorna:
-        Resultados de la consulta o filas afectadas
-    """
     conn = None
     cursor = None
     try:
@@ -60,12 +47,20 @@ def execute_query(query, params=None, fetch_one=False, fetch_all=False, commit=F
             conn.commit()
             return cursor.lastrowid if "INSERT" in query.upper() else cursor.rowcount
         
+        results = None
         if fetch_one:
-            return cursor.fetchone()
+            results = cursor.fetchone()
         elif fetch_all:
-            return cursor.fetchall()
-            
-        return None
+            results = cursor.fetchall()
+        
+        # Convertir objetos de fecha/hora a strings
+        if results:
+            if isinstance(results, dict):  # Para fetchone
+                results = convert_datetime_fields(results)
+            elif isinstance(results, list):  # Para fetchall
+                results = [convert_datetime_fields(row) for row in results]
+        
+        return results
         
     except mysql.connector.Error as err:
         app.logger.error(f"Error de base de datos: {err}")
@@ -75,6 +70,21 @@ def execute_query(query, params=None, fetch_one=False, fetch_all=False, commit=F
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
+
+def convert_datetime_fields(row):
+    """Convierte campos datetime, date y timedelta a strings"""
+    converted = {}
+    for key, value in row.items():
+        if value is None:
+            converted[key] = None
+        elif isinstance(value, (datetime.datetime, datetime.date)):
+            converted[key] = value.isoformat()
+        elif isinstance(value, datetime.timedelta):
+            # Convierte timedelta a segundos o string
+            converted[key] = str(value)
+        else:
+            converted[key] = value
+    return converted
 
 # Decorador para verificar el token JWT y el rol
 def token_required(roles=None):
