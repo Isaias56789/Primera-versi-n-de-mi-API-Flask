@@ -1,12 +1,17 @@
 import os
-import time
 import logging
 import mysql.connector
 import jwt
-from datetime import datetime 
+from datetime import datetime, time  # Correct datetime imports
 from flask import Flask, request, jsonify
 from functools import wraps
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Reduce MySQL connector log noise
+logging.getLogger('mysql.connector').setLevel(logging.WARNING)
 
 # Configurar la aplicación Flask
 app = Flask(__name__)
