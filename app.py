@@ -6,6 +6,7 @@ import jwt
 from datetime import datetime, timedelta, time
 from flask import Flask, request, jsonify
 from functools import wraps
+import logging
 
 # Configurar la aplicación Flask
 app = Flask(__name__)
