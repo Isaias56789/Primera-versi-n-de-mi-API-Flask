@@ -10,8 +10,6 @@ from datetime import datetime, timedelta, date
 # Crear un objeto timedelta
 tiempo_delta = timedelta(days=1)
 
-timedelta(days=1)
-
 
 # Configurar la aplicación Flask
 app = Flask(__name__)
