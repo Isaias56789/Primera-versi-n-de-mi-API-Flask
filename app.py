@@ -1001,6 +1001,12 @@ def referencia_existe(tabla, id_referencia):
 # ==============================================
 # CRUD para Registro de Asistencias
 # ==============================================
+def time_to_string(time_obj):
+    if isinstance(time_obj, timedelta):
+        return str(time_obj)  # "HH:MM:SS"
+    if isinstance(time_obj, time):
+        return time_obj.strftime("%H:%M:%S")  # "HH:MM:SS"
+    return time_obj
 
 @app.route('/asistencias', methods=['GET'])
 @token_required(['administrador', 'prefecto'])
@@ -1031,10 +1037,17 @@ def get_asistencias(current_user_id):
         asistencias = cursor.fetchall()
         cursor.close()
         conn.close()
+
+        # Convertir las horas de los horarios a formato string
+        for asistencia in asistencias:
+            asistencia['hora_inicio'] = time_to_string(asistencia['hora_inicio'])
+            asistencia['hora_fin'] = time_to_string(asistencia['hora_fin'])
+
         return jsonify(asistencias)
     except Exception as e:
         app.logger.error(f'Error obteniendo asistencias: {str(e)}')
         return jsonify({'message': 'Error obteniendo asistencias'}), 500
+
 
 @app.route('/asistencias/<int:id>', methods=['GET'])
 @token_required(['administrador', 'prefecto'])
@@ -1068,6 +1081,9 @@ def get_asistencia(current_user_id, id):
         conn.close()
         
         if asistencia:
+            # Convertir las horas de los horarios a formato string
+            asistencia['hora_inicio'] = time_to_string(asistencia['hora_inicio'])
+            asistencia['hora_fin'] = time_to_string(asistencia['hora_fin'])
             return jsonify(asistencia)
         else:
             return jsonify({'message': 'Asistencia no encontrada'}), 404
