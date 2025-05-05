@@ -1008,22 +1008,45 @@ def time_to_string(time_obj):
         return time_obj.strftime("%H:%M:%S")  # "HH:MM:SS"
     return time_obj
 
+from datetime import datetime, time, timedelta
+from flask import jsonify, request
+
 @app.route('/asistencias', methods=['GET'])
 @token_required(['administrador', 'prefecto'])
 def get_asistencias(current_user_id):
     try:
+        # Obtener parámetros de consulta
+        fecha = request.args.get('fecha')
+        id_horario = request.args.get('id_horario')
+        id_maestro = request.args.get('id_maestro')
+        
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
+        # Construir consulta base con JOINs
         query = """
-        SELECT ra.*, 
-               h.dia, h.hora_inicio, h.hora_fin,
-               m.nombre as maestro_nombre, m.apellido as maestro_apellido,
-               a.nombre_asignatura,
-               c.carrera,
-               g.grupo,
-               au.aula,
-               te.estado
+        SELECT 
+            ra.id_asistencia,
+            ra.id_horario,
+            ra.id_estado,
+            ra.fecha_asistencia,
+            ra.hora_asistencia,
+            h.dia,
+            h.hora_inicio,
+            h.hora_fin,
+            m.id_maestro,
+            m.nombre as maestro_nombre,
+            m.apellido as maestro_apellido,
+            a.id_asignatura,
+            a.nombre_asignatura,
+            c.id_carrera,
+            c.carrera,
+            g.id_grupo,
+            g.grupo,
+            au.id_aula,
+            au.aula,
+            te.id_estado,
+            te.estado
         FROM registro_asistencias ra
         JOIN horarios h ON ra.id_horario = h.id_horario
         JOIN maestros m ON h.id_maestro = m.id_maestro
@@ -1032,21 +1055,66 @@ def get_asistencias(current_user_id):
         JOIN grupos g ON h.id_grupo = g.id_grupo
         JOIN aulas au ON h.id_aula = au.id_aula
         JOIN tipo_estados te ON ra.id_estado = te.id_estado
+        WHERE 1=1
         """
-        cursor.execute(query)
+        
+        params = []
+        
+        # Añadir filtros según parámetros
+        if fecha:
+            query += " AND ra.fecha_asistencia = %s"
+            params.append(fecha)
+        if id_horario:
+            query += " AND ra.id_horario = %s"
+            params.append(id_horario)
+        if id_maestro:
+            query += " AND m.id_maestro = %s"
+            params.append(id_maestro)
+            
+        # Ordenar por fecha y hora
+        query += " ORDER BY ra.fecha_asistencia DESC, h.hora_inicio ASC"
+        
+        cursor.execute(query, params)
         asistencias = cursor.fetchall()
+        
+        # Convertir tipos de fecha/hora
+        for asistencia in asistencias:
+            asistencia['hora_inicio'] = safe_time_convert(asistencia.get('hora_inicio'))
+            asistencia['hora_fin'] = safe_time_convert(asistencia.get('hora_fin'))
+            asistencia['hora_asistencia'] = safe_time_convert(asistencia.get('hora_asistencia'))
+            
+            # Formatear fecha para mejor legibilidad
+            if asistencia.get('fecha_asistencia'):
+                asistencia['fecha_formateada'] = asistencia['fecha_asistencia'].strftime('%d/%m/%Y')
+        
         cursor.close()
         conn.close()
-
-        # Convertir las horas de los horarios a formato string
-        for asistencia in asistencias:
-            asistencia['hora_inicio'] = time_to_string(asistencia['hora_inicio'])
-            asistencia['hora_fin'] = time_to_string(asistencia['hora_fin'])
-
-        return jsonify(asistencias)
+        
+        return jsonify({
+            'success': True,
+            'count': len(asistencias),
+            'data': asistencias
+        })
+        
     except Exception as e:
-        app.logger.error(f'Error obteniendo asistencias: {str(e)}')
-        return jsonify({'message': 'Error obteniendo asistencias'}), 500
+        app.logger.error(f'Error en get_asistencias: {str(e)}', exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': 'Error al obtener asistencias',
+            'error': str(e)
+        }), 500
+
+def safe_time_convert(time_obj):
+    """Conversión segura de objetos de tiempo a string"""
+    if time_obj is None:
+        return None
+    if isinstance(time_obj, timedelta):
+        return str(time_obj)
+    if isinstance(time_obj, time):
+        return time_obj.strftime("%H:%M:%S")
+    if isinstance(time_obj, str):
+        return time_obj
+    return str(time_obj)
 
 
 @app.route('/asistencias/<int:id>', methods=['GET'])
