@@ -1318,59 +1318,25 @@ def create_usuario(current_user_id):
 def update_usuario(current_user_id, id):
     try:
         data = request.get_json()
-        
-        # Validación de campos requeridos
-        if not data or not all(key in data for key in ['name', 'email', 'role']):
-            return jsonify({'message': 'Datos incompletos'}), 400
-            
-        # Validación de formato de email
-        if not re.match(r"[^@]+@[^@]+\.[^@]+", data['email']):
-            return jsonify({'message': 'Email no válido'}), 400
-            
-        # Validación de roles permitidos
-        roles_permitidos = ['administrador', 'prefecto', 'profesor']
-        if data['role'] not in roles_permitidos:
-            return jsonify({'message': 'Rol no válido'}), 400
-
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Verificar si el usuario existe primero
-        cursor.execute("SELECT id FROM users WHERE id = %s", (id,))
-        if not cursor.fetchone():
-            return jsonify({'message': 'Usuario no encontrado'}), 404
-        
-        # Actualización
         cursor.execute(
             "UPDATE users SET name = %s, email = %s, role = %s WHERE id = %s",
             (data['name'], data['email'], data['role'], id)
         )
         conn.commit()
-        
-        # Obtener datos actualizados para respuesta
-        cursor.execute("SELECT id, name, email, role FROM users WHERE id = %s", (id,))
-        usuario_actualizado = cursor.fetchone()
-        
+        affected_rows = cursor.rowcount
         cursor.close()
         conn.close()
         
-        return jsonify({
-            'message': 'Usuario actualizado',
-            'usuario': {
-                'id': usuario_actualizado[0],
-                'name': usuario_actualizado[1],
-                'email': usuario_actualizado[2],
-                'role': usuario_actualizado[3]
-            }
-        }), 200
-        
+        if affected_rows == 0:
+            return jsonify({'message': 'Usuario no encontrado'}), 404
+        return jsonify({'message': 'Usuario actualizado'})
     except Exception as e:
         app.logger.error(f'Error actualizando usuario: {str(e)}')
-        return jsonify({
-            'message': 'Error actualizando usuario',
-            'error': str(e)
-        }), 500
-
+        return jsonify({'message': 'Error actualizando usuario'}), 500
+        
 @app.route('/usuarios/<int:id>', methods=['DELETE'])
 @token_required(['administrador'])
 def delete_usuario(current_user_id, id):
