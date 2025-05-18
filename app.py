@@ -890,7 +890,10 @@ def get_horarios(current_user_id):
 @token_required(['administrador'])
 def update_horario(current_user_id, id):
     try:
+        app.logger.info(f"Iniciando actualización de horario {id}")  # Log para depuración
+        
         data = request.get_json()
+        app.logger.info(f"Datos recibidos: {data}")  # Log de los datos recibidos
         
         # Validación de campos requeridos
         required_fields = [
@@ -899,22 +902,39 @@ def update_horario(current_user_id, id):
             'hora_inicio', 'hora_fin'
         ]
         
-        if not all(field in data for field in required_fields):
-            return jsonify({'message': 'Faltan campos requeridos'}), 400
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            app.logger.warning(f"Faltan campos requeridos: {missing_fields}")
+            return jsonify({
+                'message': 'Faltan campos requeridos',
+                'missing_fields': missing_fields
+            }), 400
         
         # Verificar que el horario existe
         if not execute_query("SELECT 1 FROM horarios WHERE id_horario = %s", (id,), fetch_one=True):
+            app.logger.warning(f"Horario no encontrado: {id}")
             return jsonify({'message': 'Horario no encontrado'}), 404
         
-        # Validar que las referencias existan
-        if not all(referencia_existe(field, data[field]) for field in [
+        # Validar referencias con logging
+        references = [
             ('maestros', 'id_maestro'),
             ('asignaturas', 'id_asignatura'),
             ('carreras', 'id_carrera'),
             ('grupos', 'id_grupo'),
             ('aulas', 'id_aula')
-        ]):
-            return jsonify({'message': 'Una o más referencias no existen'}), 400
+        ]
+        
+        missing_references = []
+        for table, field in references:
+            if not execute_query(f"SELECT 1 FROM {table} WHERE id_{table[:-1]} = %s", (data[field],), fetch_one=True):
+                missing_references.append(field)
+        
+        if missing_references:
+            app.logger.warning(f"Referencias no encontradas: {missing_references}")
+            return jsonify({
+                'message': 'Referencias no encontradas',
+                'invalid_references': missing_references
+            }), 400
         
         # Actualizar el horario
         affected_rows = execute_query(
@@ -929,24 +949,41 @@ def update_horario(current_user_id, id):
             hora_fin = %s 
             WHERE id_horario = %s""",
             (
-                data['id_maestro'], data['id_asignatura'], data['id_carrera'],
-                data['id_grupo'], data['id_aula'], data['dia'],
-                data['hora_inicio'], data['hora_fin'], id
+                int(data['id_maestro']), 
+                int(data['id_asignatura']), 
+                int(data['id_carrera']),
+                int(data['id_grupo']), 
+                int(data['id_aula']), 
+                str(data['dia']),
+                str(data['hora_inicio']), 
+                str(data['hora_fin']), 
+                int(id)
             ),
             commit=True
         )
         
+        app.logger.info(f"Filas afectadas: {affected_rows}")
+        
         if affected_rows == 0:
             return jsonify({'message': 'No se realizaron cambios en el horario'}), 200
         
-        return jsonify({'message': 'Horario actualizado exitosamente'})
+        return jsonify({
+            'message': 'Horario actualizado exitosamente',
+            'id_horario': id
+        }), 200
         
     except mysql.connector.Error as err:
-        app.logger.error(f'Error de base de datos actualizando horario: {str(err)}', exc_info=True)
-        return jsonify({'message': 'Error actualizando horario'}), 500
+        app.logger.error(f'Error de base de datos: {str(err)}', exc_info=True)
+        return jsonify({
+            'message': 'Error de base de datos',
+            'error': str(err)
+        }), 500
     except Exception as e:
-        app.logger.error(f'Error inesperado actualizando horario: {str(e)}', exc_info=True)
-        return jsonify({'message': 'Error interno del servidor'}), 500
+        app.logger.error(f'Error inesperado: {str(e)}', exc_info=True)
+        return jsonify({
+            'message': 'Error interno del servidor',
+            'error': str(e)
+        }), 500
 
 @app.route('/horarios/<int:id>', methods=['DELETE'])
 @token_required(['administrador'])
