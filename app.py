@@ -1042,114 +1042,131 @@ def referencia_existe(tabla, id_referencia):
 # ==============================================
 # CRUD para Registro de Asistencias - Versión Corregida
 # ==============================================
-
-@app.route('/asistencias', methods=['POST'])
-@token_required(['prefecto'])
-def crear_asistencia(current_user_id):
-    try:
-        data = request.get_json()
-        
-        # Validar datos
-        campos_requeridos = ['id_horario', 'id_estado', 'fecha_asistencia', 'hora_asistencia']
-        validar_datos_asistencia(data, campos_requeridos)
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Verificar si ya existe una asistencia para este horario y fecha
-        cursor.execute("""
-        SELECT id_asistencia FROM registro_asistencias 
-        WHERE id_horario = %s AND fecha_asistencia = %s
-        """, (data['id_horario'], data['fecha_asistencia']))
-        
-        if cursor.fetchone():
-            raise BadRequest('Ya existe un registro de asistencia para este horario y fecha')
-        
-        # Insertar nueva asistencia
-        cursor.execute("""
-        INSERT INTO registro_asistencias 
-        (id_horario, id_estado, fecha_asistencia, hora_asistencia) 
-        VALUES (%s, %s, %s, %s)
-        """, (
-            data['id_horario'],
-            data['id_estado'],
-            data['fecha_asistencia'],
-            data['hora_asistencia']
-        ))
-        
-        conn.commit()
-        asistencia_id = cursor.lastrowid
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Asistencia registrada exitosamente',
-            'id': asistencia_id
-        }), 201
-        
-    except BadRequest as e:
-        return jsonify({'success': False, 'message': str(e)}), 400
-    except Exception as e:
-        conn.rollback()
-        app.logger.error(f'Error registrando asistencia: {str(e)}')
-        return jsonify({
-            'success': False,
-            'message': 'Error interno al registrar asistencia'
-        }), 500
-
-@app.route('/asistencias/<int:id_asistencia>', methods=['PUT'])
-@token_required(['prefecto'])
-def actualizar_asistencia(current_user_id, id_asistencia):
-    try:
-        if id_asistencia <= 0:
-            raise BadRequest('ID de asistencia inválido')
+@app.route('/asistencias', methods=['GET', 'POST'])
+@token_required(['prefecto', 'administrador'])
+def manejar_asistencias(current_user_id):
+    if request.method == 'GET':
+        try:
+            # Obtener parámetros de consulta
+            fecha = request.args.get('fecha')
+            id_horario = request.args.get('id_horario')
             
-        data = request.get_json()
-        
-        # Validar datos
-        campos_requeridos = ['id_estado', 'hora_asistencia']
-        validar_datos_asistencia(data, campos_requeridos, es_actualizacion=True)
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Actualizar asistencia
-        cursor.execute("""
-        UPDATE registro_asistencias SET 
-        id_estado = %s,
-        hora_asistencia = %s
-        WHERE id_asistencia = %s
-        """, (
-            data['id_estado'],
-            data['hora_asistencia'],
-            id_asistencia
-        ))
-        
-        if cursor.rowcount == 0:
-            raise NotFound('Asistencia no encontrada')
+            # Validar parámetros
+            if not fecha:
+                return jsonify({
+                    'success': False,
+                    'message': 'El parámetro fecha es requerido'
+                }), 400
             
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Asistencia actualizada exitosamente'
-        })
-        
-    except BadRequest as e:
-        return jsonify({'success': False, 'message': str(e)}), 400
-    except NotFound as e:
-        return jsonify({'success': False, 'message': str(e)}), 404
-    except Exception as e:
-        conn.rollback()
-        app.logger.error(f'Error actualizando asistencia: {str(e)}')
-        return jsonify({
-            'success': False,
-            'message': 'Error interno al actualizar asistencia'
-        }), 500
-
+            try:
+                # Validar formato de fecha (YYYY-MM-DD)
+                datetime.strptime(fecha, '%Y-%m-%d')
+            except ValueError:
+                return jsonify({
+                    'success': False,
+                    'message': 'Formato de fecha inválido. Use YYYY-MM-DD'
+                }), 400
+            
+            # Construir consulta base
+            query = """
+            SELECT ra.*, 
+                   h.dia, h.hora_inicio, h.hora_fin,
+                   m.nombre as maestro_nombre, m.apellido as maestro_apellido,
+                   a.nombre_asignatura,
+                   c.carrera,
+                   g.grupo,
+                   au.aula,
+                   te.estado
+            FROM registro_asistencias ra
+            JOIN horarios h ON ra.id_horario = h.id_horario
+            JOIN maestros m ON h.id_maestro = m.id_maestro
+            JOIN asignaturas a ON h.id_asignatura = a.id_asignatura
+            JOIN carreras c ON h.id_carrera = c.id_carrera
+            JOIN grupos g ON h.id_grupo = g.id_grupo
+            JOIN aulas au ON h.id_aula = au.id_aula
+            JOIN tipo_estados te ON ra.id_estado = te.id_estado
+            WHERE ra.fecha_asistencia = %s
+            """
+            params = [fecha]
+            
+            # Añadir filtro por horario si existe
+            if id_horario:
+                query += " AND ra.id_horario = %s"
+                params.append(id_horario)
+            
+            # Ejecutar consulta
+            conn = get_db_connection()
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, params)
+            asistencias = cursor.fetchall()
+            cursor.close()
+            conn.close()
+            
+            return jsonify({
+                'success': True,
+                'data': asistencias
+            })
+            
+        except Exception as e:
+            app.logger.error(f'Error obteniendo asistencias: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Error al obtener asistencias'
+            }), 500
+    
+    elif request.method == 'POST':
+        # Mantén tu implementación existente de POST aquí
+        try:
+            data = request.get_json()
+            
+            # Validar datos
+            campos_requeridos = ['id_horario', 'id_estado', 'fecha_asistencia', 'hora_asistencia']
+            validar_datos_asistencia(data, campos_requeridos)
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Verificar si ya existe una asistencia para este horario y fecha
+            cursor.execute("""
+            SELECT id_asistencia FROM registro_asistencias 
+            WHERE id_horario = %s AND fecha_asistencia = %s
+            """, (data['id_horario'], data['fecha_asistencia']))
+            
+            if cursor.fetchone():
+                raise BadRequest('Ya existe un registro de asistencia para este horario y fecha')
+            
+            # Insertar nueva asistencia
+            cursor.execute("""
+            INSERT INTO registro_asistencias 
+            (id_horario, id_estado, fecha_asistencia, hora_asistencia) 
+            VALUES (%s, %s, %s, %s)
+            """, (
+                data['id_horario'],
+                data['id_estado'],
+                data['fecha_asistencia'],
+                data['hora_asistencia']
+            ))
+            
+            conn.commit()
+            asistencia_id = cursor.lastrowid
+            cursor.close()
+            conn.close()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Asistencia registrada exitosamente',
+                'id': asistencia_id
+            }), 201
+            
+        except BadRequest as e:
+            return jsonify({'success': False, 'message': str(e)}), 400
+        except Exception as e:
+            conn.rollback()
+            app.logger.error(f'Error registrando asistencia: {str(e)}')
+            return jsonify({
+                'success': False,
+                'message': 'Error interno al registrar asistencia'
+            }), 500
 # ==============================================
 # CRUD para Estados
 # ==============================================
