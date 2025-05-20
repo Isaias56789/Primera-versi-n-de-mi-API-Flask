@@ -6,6 +6,7 @@ import jwt
 from flask import Flask, request, jsonify
 from functools import wraps
 from datetime import datetime, date, timedelta
+´
 
 # Crear un objeto timedelta
 tiempo_delta = timedelta(days=1)
@@ -782,7 +783,31 @@ def create_horario(current_user_id):
             'id_maestro': 'maestros',
             'id_asignatura': 'asignaturas',
             'id_carrera': 'carreras', 
-            'id_grupo': 'grupos',
+            'id_grupo': 'grupos',class Asistencia {
+  final int idAsistencia;
+  final int idHorario;
+  final int idEstado;
+  final DateTime fechaAsistencia;
+  final String horaAsistencia;
+
+  Asistencia({
+    required this.idAsistencia,
+    required this.idHorario,
+    required this.idEstado,
+    required this.fechaAsistencia,
+    required this.horaAsistencia,
+  });
+
+  factory Asistencia.fromJson(Map<String, dynamic> json) {
+    return Asistencia(
+      idAsistencia: json['id_asistencia'] as int? ?? 0, // Handle null case
+      idHorario: json['id_horario'] as int? ?? 0,       // Handle null case
+      idEstado: json['id_estado'] as int? ?? 0,         // Handle null case
+      fechaAsistencia: DateTime.parse(json['fecha_asistencia'] as String? ?? DateTime.now().toString()),
+      horaAsistencia: json['hora_asistencia'] as String? ?? '',
+    );
+  }
+}
             'id_aula': 'aulas',
             'dia': None,
             'hora_inicio': None,
