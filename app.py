@@ -1038,29 +1038,69 @@ def referencia_existe(tabla, id_referencia):
 # ==============================================
 # CRUD para Registro de Asistencias
 # ==============================================
-def time_to_string(time_obj):
-    if isinstance(time_obj, timedelta):
-        return str(time_obj)  # "HH:MM:SS"
-    if isinstance(time_obj, time):
-        return time_obj.strftime("%H:%M:%S")  # "HH:MM:SS"
-    return time_obj
-
+# ==============================================
+# CRUD para Registro de Asistencias - Versión Corregida
+# ==============================================
 from datetime import datetime, time, timedelta
 from flask import jsonify, request
+from werkzeug.exceptions import BadRequest, NotFound, InternalServerError
+
+def validar_datos_asistencia(data, campos_requeridos, es_actualizacion=False):
+    """Valida los datos de asistencia"""
+    if not isinstance(data, dict):
+        raise BadRequest('Los datos deben ser un objeto JSON')
+    
+    # Verificar campos requeridos
+    campos_faltantes = [campo for campo in campos_requeridos if campo not in data]
+    if campos_faltantes:
+        raise BadRequest(f'Faltan campos requeridos: {", ".join(campos_faltantes)}')
+    
+    # Validar estado (1: Presente, 2: Ausente, 3: Retardo)
+    if 'id_estado' in data and data['id_estado'] not in (1, 2, 3):
+        raise BadRequest('Estado de asistencia inválido. Valores permitidos: 1 (Presente), 2 (Ausente), 3 (Retardo)')
+    
+    # Validar formato de fecha (YYYY-MM-DD)
+    if 'fecha_asistencia' in data:
+        try:
+            datetime.strptime(data['fecha_asistencia'], '%Y-%m-%d')
+        except ValueError:
+            raise BadRequest('Formato de fecha inválido. Debe ser YYYY-MM-DD')
+    
+    # Validar formato de hora (HH:MM:SS)
+    if 'hora_asistencia' in data:
+        if not isinstance(data['hora_asistencia'], str) or not data['hora_asistencia'].count(':') >= 1:
+            raise BadRequest('Formato de hora inválido. Debe ser HH:MM o HH:MM:SS')
+
+def convertir_tiempo(time_obj):
+    """Convierte objetos de tiempo a string"""
+    if time_obj is None:
+        return None
+    if isinstance(time_obj, timedelta):
+        return str(time_obj)
+    if isinstance(time_obj, time):
+        return time_obj.strftime("%H:%M:%S")
+    return str(time_obj)
 
 @app.route('/asistencias', methods=['GET'])
 @token_required(['administrador', 'prefecto'])
-def get_asistencias(current_user_id):
+def obtener_asistencias(current_user_id):
     try:
         # Obtener parámetros de consulta
         fecha = request.args.get('fecha')
-        id_horario = request.args.get('id_horario')
-        id_maestro = request.args.get('id_maestro')
+        id_horario = request.args.get('id_horario', type=int)
+        id_maestro = request.args.get('id_maestro', type=int)
+        
+        # Validar parámetros
+        if fecha:
+            try:
+                datetime.strptime(fecha, '%Y-%m-%d')
+            except ValueError:
+                raise BadRequest('Formato de fecha inválido. Use YYYY-MM-DD')
         
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # Construir consulta base con JOINs
+        # Consulta SQL mejorada con parámetros seguros
         query = """
         SELECT 
             ra.id_asistencia,
@@ -1072,17 +1112,11 @@ def get_asistencias(current_user_id):
             h.hora_inicio,
             h.hora_fin,
             m.id_maestro,
-            m.nombre as maestro_nombre,
-            m.apellido as maestro_apellido,
-            a.id_asignatura,
+            CONCAT(m.nombre, ' ', m.apellido) as maestro,
             a.nombre_asignatura,
-            c.id_carrera,
             c.carrera,
-            g.id_grupo,
             g.grupo,
-            au.id_aula,
             au.aula,
-            te.id_estado,
             te.estado
         FROM registro_asistencias ra
         JOIN horarios h ON ra.id_horario = h.id_horario
@@ -1097,7 +1131,7 @@ def get_asistencias(current_user_id):
         
         params = []
         
-        # Añadir filtros según parámetros
+        # Filtros
         if fecha:
             query += " AND ra.fecha_asistencia = %s"
             params.append(fecha)
@@ -1108,19 +1142,17 @@ def get_asistencias(current_user_id):
             query += " AND m.id_maestro = %s"
             params.append(id_maestro)
             
-        # Ordenar por fecha y hora
         query += " ORDER BY ra.fecha_asistencia DESC, h.hora_inicio ASC"
         
         cursor.execute(query, params)
         asistencias = cursor.fetchall()
         
-        # Convertir tipos de fecha/hora
+        # Convertir formatos de tiempo
         for asistencia in asistencias:
-            asistencia['hora_inicio'] = safe_time_convert(asistencia.get('hora_inicio'))
-            asistencia['hora_fin'] = safe_time_convert(asistencia.get('hora_fin'))
-            asistencia['hora_asistencia'] = safe_time_convert(asistencia.get('hora_asistencia'))
+            asistencia['hora_inicio'] = convertir_tiempo(asistencia.get('hora_inicio'))
+            asistencia['hora_fin'] = convertir_tiempo(asistencia.get('hora_fin'))
+            asistencia['hora_asistencia'] = convertir_tiempo(asistencia.get('hora_asistencia'))
             
-            # Formatear fecha para mejor legibilidad
             if asistencia.get('fecha_asistencia'):
                 asistencia['fecha_formateada'] = asistencia['fecha_asistencia'].strftime('%d/%m/%Y')
         
@@ -1133,38 +1165,29 @@ def get_asistencias(current_user_id):
             'data': asistencias
         })
         
+    except BadRequest as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
-        app.logger.error(f'Error en get_asistencias: {str(e)}', exc_info=True)
+        app.logger.error(f'Error en obtener_asistencias: {str(e)}', exc_info=True)
         return jsonify({
             'success': False,
-            'message': 'Error al obtener asistencias',
-            'error': str(e)
+            'message': 'Error interno al obtener asistencias'
         }), 500
 
-def safe_time_convert(time_obj):
-    """Conversión segura de objetos de tiempo a string"""
-    if time_obj is None:
-        return None
-    if isinstance(time_obj, timedelta):
-        return str(time_obj)
-    if isinstance(time_obj, time):
-        return time_obj.strftime("%H:%M:%S")
-    if isinstance(time_obj, str):
-        return time_obj
-    return str(time_obj)
-
-
-@app.route('/asistencias/<int:id>', methods=['GET'])
+@app.route('/asistencias/<int:id_asistencia>', methods=['GET'])
 @token_required(['administrador', 'prefecto'])
-def get_asistencia(current_user_id, id):
+def obtener_asistencia(current_user_id, id_asistencia):
     try:
+        if id_asistencia <= 0:
+            raise BadRequest('ID de asistencia inválido')
+        
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        query = """
+        cursor.execute("""
         SELECT ra.*, 
                h.dia, h.hora_inicio, h.hora_fin,
-               m.nombre as maestro_nombre, m.apellido as maestro_apellido,
+               CONCAT(m.nombre, ' ', m.apellido) as maestro,
                a.nombre_asignatura,
                c.carrera,
                g.grupo,
@@ -1179,97 +1202,175 @@ def get_asistencia(current_user_id, id):
         JOIN aulas au ON h.id_aula = au.id_aula
         JOIN tipo_estados te ON ra.id_estado = te.id_estado
         WHERE ra.id_asistencia = %s
-        """
-        cursor.execute(query, (id,))
+        """, (id_asistencia,))
+        
         asistencia = cursor.fetchone()
         cursor.close()
         conn.close()
         
-        if asistencia:
-            # Convertir las horas de los horarios a formato string
-            asistencia['hora_inicio'] = time_to_string(asistencia['hora_inicio'])
-            asistencia['hora_fin'] = time_to_string(asistencia['hora_fin'])
-            return jsonify(asistencia)
-        else:
-            return jsonify({'message': 'Asistencia no encontrada'}), 404
+        if not asistencia:
+            raise NotFound('Asistencia no encontrada')
+            
+        # Convertir formatos de tiempo
+        asistencia['hora_inicio'] = convertir_tiempo(asistencia['hora_inicio'])
+        asistencia['hora_fin'] = convertir_tiempo(asistencia['hora_fin'])
+        asistencia['hora_asistencia'] = convertir_tiempo(asistencia['hora_asistencia'])
+        
+        return jsonify({'success': True, 'data': asistencia})
+        
+    except BadRequest as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    except NotFound as e:
+        return jsonify({'success': False, 'message': str(e)}), 404
     except Exception as e:
         app.logger.error(f'Error obteniendo asistencia: {str(e)}')
-        return jsonify({'message': 'Error obteniendo asistencia'}), 500
+        return jsonify({'success': False, 'message': 'Error interno'}), 500
 
 @app.route('/asistencias', methods=['POST'])
 @token_required(['prefecto'])
-def create_asistencia(current_user_id):
+def crear_asistencia(current_user_id):
     try:
         data = request.get_json()
+        
+        # Validar datos
+        campos_requeridos = ['id_horario', 'id_estado', 'fecha_asistencia', 'hora_asistencia']
+        validar_datos_asistencia(data, campos_requeridos)
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute(
-            """INSERT INTO registro_asistencias 
-            (id_horario, id_estado, fecha_asistencia, hora_asistencia) 
-            VALUES (%s, %s, %s, %s)""",
-            (data['id_horario'], data['id_estado'], 
-             data['fecha_asistencia'], data['hora_asistencia'])
-        )
+        # Verificar si ya existe una asistencia para este horario y fecha
+        cursor.execute("""
+        SELECT id_asistencia FROM registro_asistencias 
+        WHERE id_horario = %s AND fecha_asistencia = %s
+        """, (data['id_horario'], data['fecha_asistencia']))
+        
+        if cursor.fetchone():
+            raise BadRequest('Ya existe un registro de asistencia para este horario y fecha')
+        
+        # Insertar nueva asistencia
+        cursor.execute("""
+        INSERT INTO registro_asistencias 
+        (id_horario, id_estado, fecha_asistencia, hora_asistencia) 
+        VALUES (%s, %s, %s, %s)
+        """, (
+            data['id_horario'],
+            data['id_estado'],
+            data['fecha_asistencia'],
+            data['hora_asistencia']
+        ))
+        
         conn.commit()
         asistencia_id = cursor.lastrowid
         cursor.close()
         conn.close()
         
-        return jsonify({'message': 'Asistencia registrada', 'id': asistencia_id}), 201
+        return jsonify({
+            'success': True,
+            'message': 'Asistencia registrada exitosamente',
+            'id': asistencia_id
+        }), 201
+        
+    except BadRequest as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
+        conn.rollback()
         app.logger.error(f'Error registrando asistencia: {str(e)}')
-        return jsonify({'message': 'Error registrando asistencia'}), 500
+        return jsonify({
+            'success': False,
+            'message': 'Error interno al registrar asistencia'
+        }), 500
 
-@app.route('/asistencias/<int:id>', methods=['PUT'])
+@app.route('/asistencias/<int:id_asistencia>', methods=['PUT'])
 @token_required(['prefecto'])
-def update_asistencia(current_user_id, id):
+def actualizar_asistencia(current_user_id, id_asistencia):
     try:
+        if id_asistencia <= 0:
+            raise BadRequest('ID de asistencia inválido')
+            
         data = request.get_json()
+        
+        # Validar datos
+        campos_requeridos = ['id_estado', 'hora_asistencia']
+        validar_datos_asistencia(data, campos_requeridos, es_actualizacion=True)
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute(
-            """UPDATE registro_asistencias SET 
-            id_horario = %s, 
-            id_estado = %s, 
-            fecha_asistencia = %s, 
-            hora_asistencia = %s 
-            WHERE id_asistencia = %s""",
-            (data['id_horario'], data['id_estado'], 
-             data['fecha_asistencia'], data['hora_asistencia'], id)
-        )
+        # Actualizar asistencia
+        cursor.execute("""
+        UPDATE registro_asistencias SET 
+        id_estado = %s,
+        hora_asistencia = %s
+        WHERE id_asistencia = %s
+        """, (
+            data['id_estado'],
+            data['hora_asistencia'],
+            id_asistencia
+        ))
+        
+        if cursor.rowcount == 0:
+            raise NotFound('Asistencia no encontrada')
+            
         conn.commit()
-        affected_rows = cursor.rowcount
         cursor.close()
         conn.close()
         
-        if affected_rows == 0:
-            return jsonify({'message': 'Asistencia no encontrada'}), 404
-        return jsonify({'message': 'Asistencia actualizada'})
+        return jsonify({
+            'success': True,
+            'message': 'Asistencia actualizada exitosamente'
+        })
+        
+    except BadRequest as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    except NotFound as e:
+        return jsonify({'success': False, 'message': str(e)}), 404
     except Exception as e:
+        conn.rollback()
         app.logger.error(f'Error actualizando asistencia: {str(e)}')
-        return jsonify({'message': 'Error actualizando asistencia'}), 500
+        return jsonify({
+            'success': False,
+            'message': 'Error interno al actualizar asistencia'
+        }), 500
 
-@app.route('/asistencias/<int:id>', methods=['DELETE'])
+@app.route('/asistencias/<int:id_asistencia>', methods=['DELETE'])
 @token_required(['prefecto'])
-def delete_asistencia(current_user_id, id):
+def eliminar_asistencia(current_user_id, id_asistencia):
     try:
+        if id_asistencia <= 0:
+            raise BadRequest('ID de asistencia inválido')
+            
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        cursor.execute("DELETE FROM registro_asistencias WHERE id_asistencia = %s", (id,))
+        cursor.execute("""
+        DELETE FROM registro_asistencias 
+        WHERE id_asistencia = %s
+        """, (id_asistencia,))
+        
+        if cursor.rowcount == 0:
+            raise NotFound('Asistencia no encontrada')
+            
         conn.commit()
-        affected_rows = cursor.rowcount
         cursor.close()
         conn.close()
         
-        if affected_rows == 0:
-            return jsonify({'message': 'Asistencia no encontrada'}), 404
-        return jsonify({'message': 'Asistencia eliminada'})
+        return jsonify({
+            'success': True,
+            'message': 'Asistencia eliminada exitosamente'
+        })
+        
+    except BadRequest as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    except NotFound as e:
+        return jsonify({'success': False, 'message': str(e)}), 404
     except Exception as e:
+        conn.rollback()
         app.logger.error(f'Error eliminando asistencia: {str(e)}')
-        return jsonify({'message': 'Error eliminando asistencia'}), 500
+        return jsonify({
+            'success': False,
+            'message': 'Error interno al eliminar asistencia'
+        }), 500
 
 # ==============================================
 # CRUD para Estados
