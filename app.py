@@ -1191,6 +1191,45 @@ def manejar_asistencias(current_user_id):
                 'success': False,
                 'message': 'Error interno al registrar asistencia'
             }), 500
+
+@app.route('/asistencias/<int:id_asistencia>', methods=['PUT'])
+@token_required(['prefecto', 'administrador'])
+def actualizar_estado_asistencia(current_user_id, id_asistencia):
+    try:
+        data = request.get_json()
+
+        if 'id_estado' not in data or not data['id_estado']:
+            return jsonify({'success': False, 'message': 'El campo "id_estado" es requerido'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verificar que la asistencia existe
+        cursor.execute("SELECT id_asistencia FROM registro_asistencias WHERE id_asistencia = %s", (id_asistencia,))
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Asistencia no encontrada'}), 404
+
+        # Actualizar el estado
+        cursor.execute("""
+            UPDATE registro_asistencias SET id_estado = %s WHERE id_asistencia = %s
+        """, (data['id_estado'], id_asistencia))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'Estado de asistencia actualizado exitosamente'})
+
+    except Exception as e:
+        try:
+            conn.rollback()
+        except:
+            pass
+        app.logger.error(f'Error actualizando estado asistencia: {str(e)}')
+        return jsonify({'success': False, 'message': 'Error interno al actualizar estado'}), 500
+
 # ==============================================
 # CRUD para Estados
 # ==============================================
