@@ -6,6 +6,21 @@ import jwt
 from flask import Flask, request, jsonify
 from functools import wraps
 from datetime import datetime, date, timedelta
+from flask import g
+
+def get_db_connection():
+    if 'db_conn' not in g:
+        g.db_conn = mysql.connector.connect(**db_config)
+    return g.db_conn
+
+@app.teardown_appcontext
+def close_db_connection(exception):
+    db_conn = g.pop('db_conn', None)
+    if db_conn is not None and db_conn.is_connected():
+        db_conn.close()
+
+
+______________________________________________________________________
 
 
 # Crear un objeto timedelta
