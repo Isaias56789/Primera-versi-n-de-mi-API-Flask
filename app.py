@@ -1047,11 +1047,9 @@ def referencia_existe(tabla, id_referencia):
 def manejar_asistencias(current_user_id):
     if request.method == 'GET':
         try:
-            # Obtener parámetros de consulta
             fecha = request.args.get('fecha')
             id_horario = request.args.get('id_horario')
             
-            # Validar parámetros
             if not fecha:
                 return jsonify({
                     'success': False,
@@ -1059,7 +1057,6 @@ def manejar_asistencias(current_user_id):
                 }), 400
             
             try:
-                # Validar formato de fecha (YYYY-MM-DD)
                 datetime.strptime(fecha, '%Y-%m-%d')
             except ValueError:
                 return jsonify({
@@ -1067,7 +1064,6 @@ def manejar_asistencias(current_user_id):
                     'message': 'Formato de fecha inválido. Use YYYY-MM-DD'
                 }), 400
             
-            # Construir consulta base
             query = """
             SELECT ra.*, 
                    h.dia, h.hora_inicio, h.hora_fin,
@@ -1089,12 +1085,10 @@ def manejar_asistencias(current_user_id):
             """
             params = [fecha]
             
-            # Añadir filtro por horario si existe
             if id_horario:
                 query += " AND ra.id_horario = %s"
                 params.append(id_horario)
             
-            # Ejecutar consulta
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
             cursor.execute(query, params)
@@ -1115,20 +1109,14 @@ def manejar_asistencias(current_user_id):
             }), 500
     
     elif request.method == 'POST':
-        conn = None
         try:
             data = request.get_json()
-            
-            # Lista de campos requeridos
             campos_requeridos = ['id_horario', 'id_estado', 'fecha_asistencia', 'hora_asistencia']
-            
-            # Validar datos (asumo que tienes esta función, si quieres te ayudo a definirla)
             validar_datos_asistencia(data, campos_requeridos)
             
             conn = get_db_connection()
             cursor = conn.cursor()
             
-            # Verificar si ya existe una asistencia para este horario y fecha
             cursor.execute("""
             SELECT id_asistencia FROM registro_asistencias 
             WHERE id_horario = %s AND fecha_asistencia = %s
@@ -1137,7 +1125,6 @@ def manejar_asistencias(current_user_id):
             if cursor.fetchone():
                 raise BadRequest('Ya existe un registro de asistencia para este horario y fecha')
             
-            # Insertar nueva asistencia
             cursor.execute("""
             INSERT INTO registro_asistencias 
             (id_horario, id_estado, fecha_asistencia, hora_asistencia) 
@@ -1163,16 +1150,15 @@ def manejar_asistencias(current_user_id):
         except BadRequest as e:
             return jsonify({'success': False, 'message': str(e)}), 400
         except Exception as e:
-            if conn:
+            if 'conn' in locals():
                 conn.rollback()
+                cursor.close()
+                conn.close()
             app.logger.error(f'Error registrando asistencia: {str(e)}')
             return jsonify({
                 'success': False,
                 'message': 'Error interno al registrar asistencia'
             }), 500
-        finally:
-            if conn:
-                conn.close()
 
 # ==============================================
 # CRUD para Estados
