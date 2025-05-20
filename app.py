@@ -1111,20 +1111,40 @@ def manejar_asistencias(current_user_id):
     elif request.method == 'POST':
         try:
             data = request.get_json()
+
+            # Validaciones básicas
             campos_requeridos = ['id_horario', 'id_estado', 'fecha_asistencia', 'hora_asistencia']
-            validar_datos_asistencia(data, campos_requeridos)
-            
+            for campo in campos_requeridos:
+                if campo not in data or not data[campo]:
+                    return jsonify({'success': False, 'message': f'El campo "{campo}" es requerido'}), 400
+
+            # Validar formato de fecha
+            try:
+                datetime.strptime(data['fecha_asistencia'], '%Y-%m-%d')
+            except ValueError:
+                return jsonify({'success': False, 'message': 'Formato de fecha inválido. Use YYYY-MM-DD'}), 400
+
+            # Validar formato de hora
+            try:
+                datetime.strptime(data['hora_asistencia'], '%H:%M:%S')
+            except ValueError:
+                return jsonify({'success': False, 'message': 'Formato de hora inválido. Use HH:MM:SS'}), 400
+
             conn = get_db_connection()
             cursor = conn.cursor()
-            
+
+            # Verificar si ya existe una asistencia para este horario y fecha
             cursor.execute("""
             SELECT id_asistencia FROM registro_asistencias 
             WHERE id_horario = %s AND fecha_asistencia = %s
             """, (data['id_horario'], data['fecha_asistencia']))
-            
+
             if cursor.fetchone():
-                raise BadRequest('Ya existe un registro de asistencia para este horario y fecha')
-            
+                cursor.close()
+                conn.close()
+                return jsonify({'success': False, 'message': 'Ya existe un registro de asistencia para este horario y fecha'}), 400
+
+            # Insertar nueva asistencia
             cursor.execute("""
             INSERT INTO registro_asistencias 
             (id_horario, id_estado, fecha_asistencia, hora_asistencia) 
@@ -1135,31 +1155,28 @@ def manejar_asistencias(current_user_id):
                 data['fecha_asistencia'],
                 data['hora_asistencia']
             ))
-            
+
             conn.commit()
             asistencia_id = cursor.lastrowid
             cursor.close()
             conn.close()
-            
+
             return jsonify({
                 'success': True,
                 'message': 'Asistencia registrada exitosamente',
                 'id': asistencia_id
             }), 201
-            
-        except BadRequest as e:
-            return jsonify({'success': False, 'message': str(e)}), 400
+
         except Exception as e:
-            if 'conn' in locals():
+            try:
                 conn.rollback()
-                cursor.close()
-                conn.close()
+            except:
+                pass
             app.logger.error(f'Error registrando asistencia: {str(e)}')
             return jsonify({
                 'success': False,
                 'message': 'Error interno al registrar asistencia'
             }), 500
-
 # ==============================================
 # CRUD para Estados
 # ==============================================
