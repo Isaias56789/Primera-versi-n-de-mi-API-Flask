@@ -1093,6 +1093,20 @@ def manejar_asistencias(current_user_id):
             cursor = conn.cursor(dictionary=True)
             cursor.execute(query, params)
             asistencias = cursor.fetchall()
+
+            # Convertir timedelta a string para evitar error JSON serialization
+            for asistencia in asistencias:
+                for campo in ['hora_inicio', 'hora_fin', 'hora_asistencia']:
+                    valor = asistencia.get(campo)
+                    if isinstance(valor, timedelta):
+                        total_seconds = int(valor.total_seconds())
+                        horas = total_seconds // 3600
+                        minutos = (total_seconds % 3600) // 60
+                        segundos = total_seconds % 60
+                        asistencia[campo] = f"{horas:02d}:{minutos:02d}:{segundos:02d}"
+                    elif isinstance(valor, datetime):
+                        asistencia[campo] = valor.strftime('%H:%M:%S')
+
             cursor.close()
             conn.close()
             
@@ -1107,7 +1121,7 @@ def manejar_asistencias(current_user_id):
                 'success': False,
                 'message': 'Error al obtener asistencias'
             }), 500
-    
+
     elif request.method == 'POST':
         try:
             data = request.get_json()
