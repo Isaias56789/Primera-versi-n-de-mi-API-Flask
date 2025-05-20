@@ -1115,12 +1115,14 @@ def manejar_asistencias(current_user_id):
             }), 500
     
     elif request.method == 'POST':
-        # Mantén tu implementación existente de POST aquí
+        conn = None
         try:
             data = request.get_json()
             
-            # Validar datos
+            # Lista de campos requeridos
             campos_requeridos = ['id_horario', 'id_estado', 'fecha_asistencia', 'hora_asistencia']
+            
+            # Validar datos (asumo que tienes esta función, si quieres te ayudo a definirla)
             validar_datos_asistencia(data, campos_requeridos)
             
             conn = get_db_connection()
@@ -1161,12 +1163,17 @@ def manejar_asistencias(current_user_id):
         except BadRequest as e:
             return jsonify({'success': False, 'message': str(e)}), 400
         except Exception as e:
-            conn.rollback()
+            if conn:
+                conn.rollback()
             app.logger.error(f'Error registrando asistencia: {str(e)}')
             return jsonify({
                 'success': False,
                 'message': 'Error interno al registrar asistencia'
             }), 500
+        finally:
+            if conn:
+                conn.close()
+
 # ==============================================
 # CRUD para Estados
 # ==============================================
