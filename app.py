@@ -6,7 +6,7 @@ import jwt
 from flask import Flask, request, jsonify
 from functools import wraps
 from datetime import datetime, date, timedelta
-´
+
 
 # Crear un objeto timedelta
 tiempo_delta = timedelta(days=1)
