@@ -784,31 +784,7 @@ def create_horario(current_user_id):
             'id_maestro': 'maestros',
             'id_asignatura': 'asignaturas',
             'id_carrera': 'carreras', 
-            'id_grupo': 'grupos',class Asistencia {
-  final int idAsistencia;
-  final int idHorario;
-  final int idEstado;
-  final DateTime fechaAsistencia;
-  final String horaAsistencia;
-
-  Asistencia({
-    required this.idAsistencia,
-    required this.idHorario,
-    required this.idEstado,
-    required this.fechaAsistencia,
-    required this.horaAsistencia,
-  });
-
-  factory Asistencia.fromJson(Map<String, dynamic> json) {
-    return Asistencia(
-      idAsistencia: json['id_asistencia'] as int? ?? 0, // Handle null case
-      idHorario: json['id_horario'] as int? ?? 0,       // Handle null case
-      idEstado: json['id_estado'] as int? ?? 0,         // Handle null case
-      fechaAsistencia: DateTime.parse(json['fecha_asistencia'] as String? ?? DateTime.now().toString()),
-      horaAsistencia: json['hora_asistencia'] as String? ?? '',
-    );
-  }
-}
+            'id_grupo': 'grupos',
             'id_aula': 'aulas',
             'dia': None,
             'hora_inicio': None,
@@ -823,7 +799,7 @@ def create_horario(current_user_id):
                 'missing': missing_fields
             }), 400
         
-        # Validar referencias
+        # Validar referencias (solo para campos que tienen tabla)
         ref_errors = []
         for field, table in required_fields.items():
             if table and not referencia_existe(table, data[field]):
@@ -848,6 +824,7 @@ def create_horario(current_user_id):
             return jsonify({
                 'message': 'Formato de hora inválido (use HH:MM)'
             }), 400
+        
         # Insertar el horario
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -884,6 +861,7 @@ def create_horario(current_user_id):
             'message': 'Error interno del servidor',
             'details': str(e)
         }), 500
+
 
 # ... [mantén las otras funciones GET, PUT, DELETE como están] ...
         
