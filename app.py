@@ -6,6 +6,7 @@ import jwt
 from flask import Flask, request, jsonify
 from functools import wraps
 from datetime import datetime, date, timedelta
+from werkzeug.exceptions import BadRequest, NotFound, InternalServerError
 
 
 # Crear un objeto timedelta
@@ -1063,9 +1064,6 @@ def referencia_existe(tabla, id_referencia):
 # ==============================================
 # CRUD para Registro de Asistencias - Versión Corregida
 # ==============================================
-from datetime import datetime, time, timedelta
-from flask import jsonify, request
-from werkzeug.exceptions import BadRequest, NotFound, InternalServerError
 
 def validar_datos_asistencia(data, campos_requeridos, es_actualizacion=False):
     """Valida los datos de asistencia"""
