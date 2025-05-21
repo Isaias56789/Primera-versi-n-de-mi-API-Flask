@@ -1260,24 +1260,31 @@ def actualizar_asistencia(current_user_id, id_asistencia):
         hora_actual = datetime.now().strftime('%H:%M:%S')
         hora_asistencia = data.get('hora_asistencia', hora_actual)
 
-        # 3. Ejecutar actualización
+        # 3. Ejecutar actualización (sin RETURNING)
         cursor.execute("""
             UPDATE registro_asistencias 
             SET id_estado = %s, 
                 hora_asistencia = %s,
                 fecha_actualizacion = NOW()
             WHERE id_asistencia = %s
-            RETURNING *
         """, (
             data['id_estado'],
             hora_asistencia,
             id_asistencia
         ))
 
-        # 4. Obtener y formatear los datos actualizados
-        asistencia_actualizada = cursor.fetchone()
+        # 4. Obtener los datos actualizados con una consulta SELECT separada
+        cursor.execute("""
+            SELECT ra.*, te.estado 
+            FROM registro_asistencias ra
+            JOIN tipo_estados te ON ra.id_estado = te.id_estado
+            WHERE ra.id_asistencia = %s
+        """, (id_asistencia,))
         
-        # Convertir campos timedelta a strings
+        asistencia_actualizada = cursor.fetchone()
+        conn.commit()
+
+        # 5. Formatear los datos de tiempo
         if asistencia_actualizada:
             for campo in ['hora_asistencia', 'hora_inicio', 'hora_fin']:
                 if campo in asistencia_actualizada and isinstance(asistencia_actualizada[campo], timedelta):
@@ -1286,8 +1293,6 @@ def actualizar_asistencia(current_user_id, id_asistencia):
                     minutos = (total_seconds % 3600) // 60
                     asistencia_actualizada[campo] = f"{horas:02d}:{minutos:02d}"
 
-        conn.commit()
-        
         return jsonify({
             'success': True,
             'message': 'Asistencia actualizada exitosamente',
