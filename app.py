@@ -1197,6 +1197,8 @@ def manejar_asistencias(current_user_id):
 @token_required(['prefecto', 'administrador'])
 def actualizar_estado_asistencia(current_user_id, id_asistencia):
     try:
+        print(f"ID recibido para actualizar asistencia: {id_asistencia}")  # Depuración
+
         data = request.get_json()
 
         if 'id_estado' not in data or not data['id_estado']:
@@ -1205,14 +1207,19 @@ def actualizar_estado_asistencia(current_user_id, id_asistencia):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Verificar si existe la asistencia
+        # Mostrar todos los IDs existentes para depuración
+        cursor.execute("SELECT id_asistencia FROM registro_asistencias")
+        registros = cursor.fetchall()
+        print(f"IDs existentes en registro_asistencias: {registros}")  # Depuración
+
+        # Verificar que la asistencia existe
         cursor.execute("SELECT id_asistencia FROM registro_asistencias WHERE id_asistencia = %s", (id_asistencia,))
         if not cursor.fetchone():
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'Asistencia no encontrada'}), 404
 
-        # Actualizar estado
+        # Actualizar el estado
         cursor.execute("""
             UPDATE registro_asistencias SET id_estado = %s WHERE id_asistencia = %s
         """, (data['id_estado'], id_asistencia))
@@ -1230,6 +1237,7 @@ def actualizar_estado_asistencia(current_user_id, id_asistencia):
             pass
         app.logger.error(f'Error actualizando estado asistencia: {str(e)}')
         return jsonify({'success': False, 'message': 'Error interno al actualizar estado'}), 500
+
 
 # ==============================================
 # CRUD para Estados
