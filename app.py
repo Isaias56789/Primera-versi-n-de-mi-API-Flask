@@ -1194,70 +1194,78 @@ def manejar_asistencias(current_user_id):
             }), 500
 
 
-@asistencias_bp.route('/asistencias/<int:id_asistencia>', methods=['PUT'])
-@token_required
-def actualizar_asistencia(usuario_actual, id_asistencia):
+@app.route('/asistencias/<int:id_asistencia>', methods=['PUT'])
+@token_required(['prefecto', 'administrador'])
+def actualizar_estado_asistencia(current_user_id, id_asistencia):
+    conn = None
     try:
-        # Obtener los datos del JSON
-        datos = request.get_json()
-        id_empleado = datos.get('id_empleado')
-        id_turno = datos.get('id_turno')
-        id_estatus = datos.get('id_estatus')
-        fecha = datos.get('fecha')
-        hora_entrada = datos.get('hora_entrada')
-        hora_salida = datos.get('hora_salida')
+        data = request.get_json()
 
-        # Verificar que al menos un campo se está actualizando
-        if not any([id_empleado, id_turno, id_estatus, fecha, hora_entrada, hora_salida]):
-            return jsonify({'error': 'No hay datos para actualizar'}), 400
+        if 'id_estado' not in data or not data['id_estado']:
+            return jsonify({'success': False, 'message': 'El campo "id_estado" es requerido'}), 400
 
-        connection = get_connection()
-        with connection.cursor() as cursor:
-            # Verificar si la asistencia existe
-            cursor.execute('SELECT * FROM asistencias WHERE id_asistencia = %s', (id_asistencia,))
-            asistencia = cursor.fetchone()
+        if 'hora_asistencia' in data:
+            try:
+                datetime.strptime(data['hora_asistencia'], '%H:%M:%S')
+            except ValueError:
+                return jsonify({'success': False, 'message': 'Formato de hora inválido. Use HH:MM:SS'}), 400
 
-            if asistencia is None:
-                return jsonify({'error': 'Asistencia no encontrada'}), 404
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
 
-            # Construir dinámicamente el query
-            campos = []
-            valores = []
+        # Verificar que la asistencia existe
+        cursor.execute("""
+            SELECT id_estado, hora_asistencia FROM registro_asistencias WHERE id_asistencia = %s
+        """, (id_asistencia,))
+        registro_actual = cursor.fetchone()
 
-            if id_empleado:
-                campos.append("id_empleado = %s")
-                valores.append(id_empleado)
-            if id_turno:
-                campos.append("id_turno = %s")
-                valores.append(id_turno)
-            if id_estatus:
-                campos.append("id_estatus = %s")
-                valores.append(id_estatus)
-            if fecha:
-                campos.append("fecha = %s")
-                valores.append(fecha)
-            if hora_entrada:
-                campos.append("hora_entrada = %s")
-                valores.append(hora_entrada)
-            if hora_salida:
-                campos.append("hora_salida = %s")
-                valores.append(hora_salida)
+        if not registro_actual:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Asistencia no encontrada'}), 404
 
-            valores.append(id_asistencia)
+        # Verificar si hay cambios
+        estado_actual = registro_actual['id_estado']
+        hora_actual = registro_actual['hora_asistencia'].strftime('%H:%M:%S') if registro_actual['hora_asistencia'] else None
+        estado_nuevo = int(data['id_estado'])
+        hora_nueva = data.get('hora_asistencia')
 
-            query = f'''
-                UPDATE asistencias
-                SET {", ".join(campos)}
-                WHERE id_asistencia = %s
-            '''
+        cambio_estado = estado_actual != estado_nuevo
+        cambio_hora = hora_nueva is not None and hora_actual != hora_nueva
 
-            cursor.execute(query, tuple(valores))
-            connection.commit()
+        if not cambio_estado and not cambio_hora:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': True, 'message': 'No hay cambios para actualizar'})
 
-        return jsonify({'message': 'Asistencia actualizada correctamente'}), 200
+        # Construir query dinámicamente
+        query = "UPDATE registro_asistencias SET id_estado = %s"
+        params = [estado_nuevo]
+
+        if cambio_hora:
+            query += ", hora_asistencia = %s"
+            params.append(hora_nueva)
+
+        query += " WHERE id_asistencia = %s"
+        params.append(id_asistencia)
+
+        # Ejecutar actualización
+        cursor.execute(query, params)
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'Asistencia actualizada exitosamente'})
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        if conn:
+            try:
+                conn.rollback()
+            except:
+                pass
+        app.logger.error(f'Error actualizando asistencia: {str(e)}')
+        return jsonify({'success': False, 'message': 'Error interno al actualizar asistencia'}), 500
 
 # ==============================================
 # CRUD para Estados
