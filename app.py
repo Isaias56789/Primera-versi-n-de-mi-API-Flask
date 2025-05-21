@@ -12,7 +12,6 @@ from werkzeug.exceptions import BadRequest, NotFound, InternalServerError
 # Crear un objeto timedelta
 tiempo_delta = timedelta(days=1)
 
-app.register_blueprint(asistencias_bp)
 # Configurar la aplicación Flask
 app = Flask(__name__)
 
@@ -1040,9 +1039,11 @@ def referencia_existe(tabla, id_referencia):
 
 
 
+
 # ==============================================
-# CRUD para Registro de Asistencias - Versión Corregida
+# CRUD para Registro de Asistencias - Versión Mejorada
 # ==============================================
+
 @app.route('/asistencias', methods=['GET', 'POST'])
 @token_required(['prefecto', 'administrador'])
 def manejar_asistencias(current_user_id):
@@ -1051,6 +1052,7 @@ def manejar_asistencias(current_user_id):
             fecha = request.args.get('fecha')
             id_horario = request.args.get('id_horario')
 
+            # Validación de parámetros
             if not fecha:
                 return jsonify({
                     'success': False,
@@ -1065,11 +1067,13 @@ def manejar_asistencias(current_user_id):
                     'message': 'Formato de fecha inválido. Use YYYY-MM-DD'
                 }), 400
 
+            # Construcción de la consulta
             query = """
-            SELECT ra.*, 
+            SELECT ra.id_asistencia, ra.id_horario, ra.id_estado, 
+                   ra.fecha_asistencia, ra.hora_asistencia,
                    h.dia, h.hora_inicio, h.hora_fin,
-                   m.nombre as maestro_nombre, m.apellido as maestro_apellido,
-                   a.nombre_asignatura,
+                   CONCAT(m.nombre, ' ', m.apellido) as maestro,
+                   a.nombre_asignatura as asignatura,
                    c.carrera,
                    g.grupo,
                    au.aula,
@@ -1087,26 +1091,31 @@ def manejar_asistencias(current_user_id):
             params = [fecha]
 
             if id_horario:
+                if not id_horario.isdigit():
+                    return jsonify({
+                        'success': False,
+                        'message': 'ID de horario debe ser numérico'
+                    }), 400
                 query += " AND ra.id_horario = %s"
-                params.append(id_horario)
+                params.append(int(id_horario))
 
+            # Ejecución de la consulta
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
             cursor.execute(query, params)
             asistencias = cursor.fetchall()
 
-            # Conversión de campos de hora para evitar errores de serialización
+            # Formateo de resultados
             for asistencia in asistencias:
                 for campo in ['hora_inicio', 'hora_fin', 'hora_asistencia']:
-                    valor = asistencia.get(campo)
-                    if isinstance(valor, timedelta):
-                        total_seconds = int(valor.total_seconds())
-                        horas = total_seconds // 3600
-                        minutos = (total_seconds % 3600) // 60
-                        segundos = total_seconds % 60
-                        asistencia[campo] = f"{horas:02d}:{minutos:02d}:{segundos:02d}"
-                    elif isinstance(valor, (datetime, time)):
-                        asistencia[campo] = valor.strftime('%H:%M:%S')
+                    if asistencia.get(campo):
+                        if isinstance(asistencia[campo], timedelta):
+                            total_seconds = int(asistencia[campo].total_seconds())
+                            horas = total_seconds // 3600
+                            minutos = (total_seconds % 3600) // 60
+                            asistencia[campo] = f"{horas:02d}:{minutos:02d}"
+                        elif isinstance(asistencia[campo], (datetime, time)):
+                            asistencia[campo] = asistencia[campo].strftime('%H:%M')
 
             cursor.close()
             conn.close()
@@ -1117,7 +1126,7 @@ def manejar_asistencias(current_user_id):
             })
 
         except Exception as e:
-            app.logger.error(f'Error obteniendo asistencias: {str(e)}')
+            app.logger.error(f'Error obteniendo asistencias: {str(e)}', exc_info=True)
             return jsonify({
                 'success': False,
                 'message': 'Error al obtener asistencias'
@@ -1127,23 +1136,34 @@ def manejar_asistencias(current_user_id):
         try:
             data = request.get_json()
 
-            # Validaciones
-            campos_requeridos = ['id_horario', 'id_estado', 'fecha_asistencia', 'hora_asistencia']
+            # Validaciones básicas
+            if not data:
+                return jsonify({'success': False, 'message': 'No se recibieron datos'}), 400
+
+            campos_requeridos = ['id_horario', 'id_estado', 'fecha_asistencia']
             for campo in campos_requeridos:
                 if campo not in data or not data[campo]:
                     return jsonify({'success': False, 'message': f'El campo "{campo}" es requerido'}), 400
 
-            # Validar formato de fecha
+            # Validar formatos
             try:
                 datetime.strptime(data['fecha_asistencia'], '%Y-%m-%d')
             except ValueError:
                 return jsonify({'success': False, 'message': 'Formato de fecha inválido. Use YYYY-MM-DD'}), 400
 
-            # Validar formato de hora
+            # Generar hora actual si no se proporciona
+            hora_actual = datetime.now().strftime('%H:%M:%S')
+            hora_asistencia = data.get('hora_asistencia', hora_actual)
+
+            # Validar formato de hora (acepta HH:MM o HH:MM:SS)
             try:
-                datetime.strptime(data['hora_asistencia'], '%H:%M:%S')
+                if ':' in hora_asistencia:
+                    partes = hora_asistencia.split(':')
+                    if len(partes) == 2:
+                        hora_asistencia = f"{hora_asistencia}:00"
+                    datetime.strptime(hora_asistencia, '%H:%M:%S')
             except ValueError:
-                return jsonify({'success': False, 'message': 'Formato de hora inválido. Use HH:MM:SS'}), 400
+                return jsonify({'success': False, 'message': 'Formato de hora inválido. Use HH:MM o HH:MM:SS'}), 400
 
             conn = get_db_connection()
             cursor = conn.cursor()
@@ -1157,7 +1177,10 @@ def manejar_asistencias(current_user_id):
             if cursor.fetchone():
                 cursor.close()
                 conn.close()
-                return jsonify({'success': False, 'message': 'Ya existe un registro de asistencia para este horario y fecha'}), 400
+                return jsonify({
+                    'success': False, 
+                    'message': 'Ya existe un registro de asistencia para este horario y fecha'
+                }), 400
 
             # Insertar nuevo registro
             cursor.execute("""
@@ -1168,61 +1191,130 @@ def manejar_asistencias(current_user_id):
                 data['id_horario'],
                 data['id_estado'],
                 data['fecha_asistencia'],
-                data['hora_asistencia']
+                hora_asistencia
             ))
 
             conn.commit()
             asistencia_id = cursor.lastrowid
+
+            # Obtener datos completos del nuevo registro
+            cursor.execute("""
+            SELECT ra.*, te.estado 
+            FROM registro_asistencias ra
+            JOIN tipo_estados te ON ra.id_estado = te.id_estado
+            WHERE ra.id_asistencia = %s
+            """, (asistencia_id,))
+            
+            nueva_asistencia = cursor.fetchone()
             cursor.close()
             conn.close()
 
             return jsonify({
                 'success': True,
                 'message': 'Asistencia registrada exitosamente',
-                'id': asistencia_id
+                'data': dict(nueva_asistencia) if nueva_asistencia else None
             }), 201
 
         except Exception as e:
             try:
                 conn.rollback()
+                if cursor: cursor.close()
+                if conn: conn.close()
             except:
                 pass
-            app.logger.error(f'Error registrando asistencia: {str(e)}')
+            app.logger.error(f'Error registrando asistencia: {str(e)}', exc_info=True)
             return jsonify({
                 'success': False,
                 'message': 'Error interno al registrar asistencia'
             }), 500
 
 
-asistencias_bp = Blueprint('asistencias', __name__)
+@app.route('/asistencias/<int:id_asistencia>', methods=['PUT'])
+@token_required(['prefecto', 'administrador'])
+def actualizar_asistencia(current_user_id, id_asistencia):
+    try:
+        data = request.get_json()
+        
+        # Validaciones básicas
+        if not data:
+            return jsonify({'success': False, 'message': 'No se recibieron datos'}), 400
+        
+        if 'id_estado' not in data:
+            return jsonify({'success': False, 'message': 'El campo id_estado es requerido'}), 400
 
-@asistencias_bp.route('/asistencias/<int:id_asistencia>', methods=['PUT'])
-def actualizar_asistencia(id_asistencia):
-    # Simulación de datos
-    asistencias = {
-        1: {"id": 1, "nombre": "Juan", "estado": "presente"},
-        2: {"id": 2, "nombre": "Ana", "estado": "ausente"},
-    }
+        # Validar formato de hora si se proporciona
+        hora_asistencia = data.get('hora_asistencia')
+        if hora_asistencia:
+            try:
+                if ':' in hora_asistencia:
+                    partes = hora_asistencia.split(':')
+                    if len(partes) == 2:
+                        hora_asistencia = f"{hora_asistencia}:00"
+                    datetime.strptime(hora_asistencia, '%H:%M:%S')
+            except ValueError:
+                return jsonify({'success': False, 'message': 'Formato de hora inválido. Use HH:MM o HH:MM:SS'}), 400
 
-    if id_asistencia not in asistencias:
-        return jsonify({"error": "Asistencia no encontrada"}), 404
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
 
-    datos = request.json
-    if not datos:
-        return jsonify({"error": "No se enviaron datos"}), 400
+        # Verificar existencia de la asistencia
+        cursor.execute("""
+        SELECT * FROM registro_asistencias WHERE id_asistencia = %s
+        """, (id_asistencia,))
+        
+        asistencia = cursor.fetchone()
+        if not asistencia:
+            cursor.close()
+            conn.close()
+            return jsonify({
+                'success': False,
+                'message': 'Asistencia no encontrada'
+            }), 404
 
-    nombre = datos.get("nombre")
-    estado = datos.get("estado")
+        # Actualizar registro
+        update_query = """
+        UPDATE registro_asistencias 
+        SET id_estado = %s, hora_asistencia = %s
+        WHERE id_asistencia = %s
+        """
+        cursor.execute(update_query, (
+            data['id_estado'],
+            hora_asistencia or asistencia['hora_asistencia'],
+            id_asistencia
+        ))
 
-    if nombre:
-        asistencias[id_asistencia]["nombre"] = nombre
-    if estado:
-        asistencias[id_asistencia]["estado"] = estado
+        conn.commit()
 
-    return jsonify({"message": "Asistencia actualizada", "asistencia": asistencias[id_asistencia]})
+        # Obtener datos actualizados
+        cursor.execute("""
+        SELECT ra.*, te.estado 
+        FROM registro_asistencias ra
+        JOIN tipo_estados te ON ra.id_estado = te.id_estado
+        WHERE ra.id_asistencia = %s
+        """, (id_asistencia,))
+        
+        asistencia_actualizada = cursor.fetchone()
+        cursor.close()
+        conn.close()
 
-# Registrar blueprint
-app.register_blueprint(asistencias_bp)
+        return jsonify({
+            'success': True,
+            'message': 'Asistencia actualizada exitosamente',
+            'data': asistencia_actualizada
+        })
+
+    except Exception as e:
+        try:
+            conn.rollback()
+            if cursor: cursor.close()
+            if conn: conn.close()
+        except:
+            pass
+        app.logger.error(f'Error actualizando asistencia: {str(e)}', exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': 'Error interno al actualizar asistencia'
+        }), 500
 # ==============================================
 # CRUD para Estados
 # ==============================================
