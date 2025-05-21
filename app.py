@@ -1193,60 +1193,50 @@ def manejar_asistencias(current_user_id):
             }), 500
 
 
-@app.route('/asistencias/<int:id_asistencia>', methods=['PUT'])
-@token_required(['prefecto', 'administrador'])
-def actualizar_estado_asistencia(current_user_id, id_asistencia):
+@asistencias_bp.route('/asistencias/<int:id_asistencia>', methods=['PUT'])
+@token_required
+def actualizar_asistencia(usuario_actual, id_asistencia):
     try:
-        print(f"ID recibido para actualizar asistencia: {id_asistencia}")
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
 
-        data = request.get_json()
-        print(f"Datos recibidos: {data}")
-
-        if 'id_estado' not in data or not data['id_estado']:
-            return jsonify({'success': False, 'message': 'El campo "id_estado" es requerido'}), 400
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Verificar que el ID exista
-        cursor.execute("SELECT id_asistencia FROM registro_asistencias WHERE id_asistencia = %s", (id_asistencia,))
+        # Verificar si la asistencia existe
+        cursor.execute("SELECT * FROM asistencias WHERE id_asistencia = %s", (id_asistencia,))
         asistencia = cursor.fetchone()
-        print(f"Resultado consulta asistencia: {asistencia}")
+        print("Asistencia encontrada:", asistencia)
 
         if asistencia is None:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Asistencia no encontrada'}), 404
+            return jsonify({'message': 'Asistencia no encontrada'}), 404
 
-        # Actualizar estado (y hora si viene en el JSON)
-        if 'hora_asistencia' in data and data['hora_asistencia']:
-            cursor.execute("""
-                UPDATE registro_asistencias
-                SET id_estado = %s, hora_asistencia = %s
-                WHERE id_asistencia = %s
-            """, (data['id_estado'], data['hora_asistencia'], id_asistencia))
-        else:
-            cursor.execute("""
-                UPDATE registro_asistencias
-                SET id_estado = %s
-                WHERE id_asistencia = %s
-            """, (data['id_estado'], id_asistencia))
+        # Obtener los datos enviados por el cliente
+        data = request.get_json()
+        print("Datos recibidos:", data)
+
+        id_estado = data.get('id_estado')
+        hora_asistencia = data.get('hora_asistencia')
+
+        # Validar que los campos estén presentes
+        if id_estado is None or hora_asistencia is None:
+            return jsonify({'message': 'Faltan datos requeridos (id_estado u hora_asistencia)'}), 400
+
+        # Ejecutar la actualización
+        cursor.execute("""
+            UPDATE asistencias 
+            SET id_estado = %s, hora_asistencia = %s 
+            WHERE id_asistencia = %s
+        """, (id_estado, hora_asistencia, id_asistencia))
 
         conn.commit()
-        cursor.close()
-        conn.close()
-
-        return jsonify({'success': True, 'message': 'Asistencia actualizada correctamente'})
+        return jsonify({'message': 'Asistencia actualizada exitosamente'}), 200
 
     except Exception as e:
-        try:
-            conn.rollback()
-        except:
-            pass
-        print(f"Error en actualizar asistencia: {e}")
-        return jsonify({'success': False, 'message': 'Error al actualizar asistencia'}), 500
+        print("Error en actualizar_asistencia:", str(e))
+        return jsonify({'message': 'Error al actualizar la asistencia'}), 500
 
-
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
 
 
 # ==============================================
