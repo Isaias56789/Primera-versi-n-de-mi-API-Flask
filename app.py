@@ -1242,26 +1242,11 @@ def actualizar_asistencia(current_user_id, id_asistencia):
         if 'id_estado' not in data:
             return jsonify({'success': False, 'message': 'El campo id_estado es requerido'}), 400
 
-        # Validar formato de hora si se proporciona
-        hora_asistencia = data.get('hora_asistencia')
-        if hora_asistencia:
-            try:
-                if ':' in hora_asistencia:
-                    partes = hora_asistencia.split(':')
-                    if len(partes) == 2:
-                        hora_asistencia = f"{hora_asistencia}:00"
-                    datetime.strptime(hora_asistencia, '%H:%M:%S')
-            except ValueError:
-                return jsonify({'success': False, 'message': 'Formato de hora inválido. Use HH:MM o HH:MM:SS'}), 400
-
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        # Verificar existencia de la asistencia
-        cursor.execute("""
-        SELECT * FROM registro_asistencias WHERE id_asistencia = %s
-        """, (id_asistencia,))
-        
+        # 1. Verificar que la asistencia existe
+        cursor.execute("SELECT * FROM registro_asistencias WHERE id_asistencia = %s", (id_asistencia,))
         asistencia = cursor.fetchone()
         if not asistencia:
             cursor.close()
@@ -1271,32 +1256,38 @@ def actualizar_asistencia(current_user_id, id_asistencia):
                 'message': 'Asistencia no encontrada'
             }), 404
 
-        # Actualizar registro
-        update_query = """
-        UPDATE registro_asistencias 
-        SET id_estado = %s, hora_asistencia = %s
-        WHERE id_asistencia = %s
-        """
-        cursor.execute(update_query, (
+        # 2. Preparar datos para actualización
+        hora_actual = datetime.now().strftime('%H:%M:%S')
+        hora_asistencia = data.get('hora_asistencia', hora_actual)
+
+        # 3. Ejecutar actualización
+        cursor.execute("""
+            UPDATE registro_asistencias 
+            SET id_estado = %s, 
+                hora_asistencia = %s,
+                fecha_actualizacion = NOW()
+            WHERE id_asistencia = %s
+            RETURNING *
+        """, (
             data['id_estado'],
-            hora_asistencia or asistencia['hora_asistencia'],
+            hora_asistencia,
             id_asistencia
         ))
 
-        conn.commit()
-
-        # Obtener datos actualizados
-        cursor.execute("""
-        SELECT ra.*, te.estado 
-        FROM registro_asistencias ra
-        JOIN tipo_estados te ON ra.id_estado = te.id_estado
-        WHERE ra.id_asistencia = %s
-        """, (id_asistencia,))
-        
+        # 4. Obtener y formatear los datos actualizados
         asistencia_actualizada = cursor.fetchone()
-        cursor.close()
-        conn.close()
+        
+        # Convertir campos timedelta a strings
+        if asistencia_actualizada:
+            for campo in ['hora_asistencia', 'hora_inicio', 'hora_fin']:
+                if campo in asistencia_actualizada and isinstance(asistencia_actualizada[campo], timedelta):
+                    total_seconds = int(asistencia_actualizada[campo].total_seconds())
+                    horas = total_seconds // 3600
+                    minutos = (total_seconds % 3600) // 60
+                    asistencia_actualizada[campo] = f"{horas:02d}:{minutos:02d}"
 
+        conn.commit()
+        
         return jsonify({
             'success': True,
             'message': 'Asistencia actualizada exitosamente',
@@ -1304,17 +1295,16 @@ def actualizar_asistencia(current_user_id, id_asistencia):
         })
 
     except Exception as e:
-        try:
+        app.logger.error(f'Error actualizando asistencia ID {id_asistencia}: {str(e)}', exc_info=True)
+        if 'conn' in locals():
             conn.rollback()
-            if cursor: cursor.close()
-            if conn: conn.close()
-        except:
-            pass
-        app.logger.error(f'Error actualizando asistencia: {str(e)}', exc_info=True)
         return jsonify({
             'success': False,
-            'message': 'Error interno al actualizar asistencia'
+            'message': f'Error interno al actualizar asistencia: {str(e)}'
         }), 500
+    finally:
+        if 'cursor' in locals(): cursor.close()
+        if 'conn' in locals(): conn.close()
 # ==============================================
 # CRUD para Estados
 # ==============================================
