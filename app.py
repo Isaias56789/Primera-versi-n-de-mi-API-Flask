@@ -12,10 +12,10 @@ from werkzeug.exceptions import BadRequest, NotFound, InternalServerError
 # Crear un objeto timedelta
 tiempo_delta = timedelta(days=1)
 
-
+app.register_blueprint(asistencias_bp)
 # Configurar la aplicación Flask
 app = Flask(__name__)
-app.register_blueprint(asistencias_bp)
+
 app.config['DEBUG'] = True if os.getenv('FLASK_ENV') == 'development' else False
 
 # Configurar logging
