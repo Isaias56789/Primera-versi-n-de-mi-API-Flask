@@ -1208,7 +1208,7 @@ def actualizar_estado_asistencia(current_user_id, id_asistencia):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Verificar existencia de la asistencia
+        # Verificar que el ID exista
         cursor.execute("SELECT id_asistencia FROM registro_asistencias WHERE id_asistencia = %s", (id_asistencia,))
         asistencia = cursor.fetchone()
         print(f"Resultado consulta asistencia: {asistencia}")
@@ -1218,22 +1218,34 @@ def actualizar_estado_asistencia(current_user_id, id_asistencia):
             conn.close()
             return jsonify({'success': False, 'message': 'Asistencia no encontrada'}), 404
 
-        # Actualizar estado
-        cursor.execute("UPDATE registro_asistencias SET id_estado = %s WHERE id_asistencia = %s", (data['id_estado'], id_asistencia))
-        conn.commit()
+        # Actualizar estado (y hora si viene en el JSON)
+        if 'hora_asistencia' in data and data['hora_asistencia']:
+            cursor.execute("""
+                UPDATE registro_asistencias
+                SET id_estado = %s, hora_asistencia = %s
+                WHERE id_asistencia = %s
+            """, (data['id_estado'], data['hora_asistencia'], id_asistencia))
+        else:
+            cursor.execute("""
+                UPDATE registro_asistencias
+                SET id_estado = %s
+                WHERE id_asistencia = %s
+            """, (data['id_estado'], id_asistencia))
 
+        conn.commit()
         cursor.close()
         conn.close()
 
-        return jsonify({'success': True, 'message': 'Estado de asistencia actualizado exitosamente'})
+        return jsonify({'success': True, 'message': 'Asistencia actualizada correctamente'})
 
     except Exception as e:
         try:
             conn.rollback()
         except:
             pass
-        print(f"Error en actualizar_estado_asistencia: {e}")
-        return jsonify({'success': False, 'message': 'Error interno al actualizar estado'}), 500
+        print(f"Error en actualizar asistencia: {e}")
+        return jsonify({'success': False, 'message': 'Error al actualizar asistencia'}), 500
+
 
 
 
