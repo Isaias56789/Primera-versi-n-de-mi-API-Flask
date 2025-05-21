@@ -1246,8 +1246,14 @@ def actualizar_asistencia(current_user_id, id_asistencia):
         cursor = conn.cursor(dictionary=True)
 
         # 1. Verificar que la asistencia existe
-        cursor.execute("SELECT * FROM registro_asistencias WHERE id_asistencia = %s", (id_asistencia,))
+        cursor.execute("""
+            SELECT ra.*, te.estado 
+            FROM registro_asistencias ra
+            JOIN tipo_estados te ON ra.id_estado = te.id_estado
+            WHERE ra.id_asistencia = %s
+        """, (id_asistencia,))
         asistencia = cursor.fetchone()
+        
         if not asistencia:
             cursor.close()
             conn.close()
@@ -1260,12 +1266,12 @@ def actualizar_asistencia(current_user_id, id_asistencia):
         hora_actual = datetime.now().strftime('%H:%M:%S')
         hora_asistencia = data.get('hora_asistencia', hora_actual)
 
-        # 3. Ejecutar actualización (sin RETURNING)
+        # 3. Ejecutar actualización usando el campo updated_at
         cursor.execute("""
             UPDATE registro_asistencias 
-            SET id_estado = %s, 
+            SET id_estado = %s,
                 hora_asistencia = %s,
-                fecha_actualizacion = NOW()
+                updated_at = NOW()
             WHERE id_asistencia = %s
         """, (
             data['id_estado'],
@@ -1273,7 +1279,7 @@ def actualizar_asistencia(current_user_id, id_asistencia):
             id_asistencia
         ))
 
-        # 4. Obtener los datos actualizados con una consulta SELECT separada
+        # 4. Obtener los datos actualizados
         cursor.execute("""
             SELECT ra.*, te.estado 
             FROM registro_asistencias ra
@@ -1286,12 +1292,16 @@ def actualizar_asistencia(current_user_id, id_asistencia):
 
         # 5. Formatear los datos de tiempo
         if asistencia_actualizada:
-            for campo in ['hora_asistencia', 'hora_inicio', 'hora_fin']:
-                if campo in asistencia_actualizada and isinstance(asistencia_actualizada[campo], timedelta):
-                    total_seconds = int(asistencia_actualizada[campo].total_seconds())
-                    horas = total_seconds // 3600
-                    minutos = (total_seconds % 3600) // 60
-                    asistencia_actualizada[campo] = f"{horas:02d}:{minutos:02d}"
+            # Convertir campos de tiempo a string
+            for campo in ['hora_asistencia', 'created_at', 'updated_at']:
+                if campo in asistencia_actualizada and asistencia_actualizada[campo]:
+                    if isinstance(asistencia_actualizada[campo], timedelta):
+                        total_seconds = int(asistencia_actualizada[campo].total_seconds())
+                        horas = total_seconds // 3600
+                        minutos = (total_seconds % 3600) // 60
+                        asistencia_actualizada[campo] = f"{horas:02d}:{minutos:02d}"
+                    elif isinstance(asistencia_actualizada[campo], (datetime, time)):
+                        asistencia_actualizada[campo] = asistencia_actualizada[campo].strftime('%Y-%m-%d %H:%M:%S')
 
         return jsonify({
             'success': True,
