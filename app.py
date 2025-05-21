@@ -1197,9 +1197,10 @@ def manejar_asistencias(current_user_id):
 @token_required(['prefecto', 'administrador'])
 def actualizar_estado_asistencia(current_user_id, id_asistencia):
     try:
-        print(f"ID recibido para actualizar asistencia: {id_asistencia}")  # Depuración
+        print(f"ID recibido para actualizar asistencia: {id_asistencia}")
 
         data = request.get_json()
+        print(f"Datos recibidos: {data}")
 
         if 'id_estado' not in data or not data['id_estado']:
             return jsonify({'success': False, 'message': 'El campo "id_estado" es requerido'}), 400
@@ -1207,24 +1208,20 @@ def actualizar_estado_asistencia(current_user_id, id_asistencia):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Mostrar todos los IDs existentes para depuración
-        cursor.execute("SELECT id_asistencia FROM registro_asistencias")
-        registros = cursor.fetchall()
-        print(f"IDs existentes en registro_asistencias: {registros}")  # Depuración
-
-        # Verificar que la asistencia existe
+        # Verificar existencia de la asistencia
         cursor.execute("SELECT id_asistencia FROM registro_asistencias WHERE id_asistencia = %s", (id_asistencia,))
-        if not cursor.fetchone():
+        asistencia = cursor.fetchone()
+        print(f"Resultado consulta asistencia: {asistencia}")
+
+        if asistencia is None:
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'Asistencia no encontrada'}), 404
 
-        # Actualizar el estado
-        cursor.execute("""
-            UPDATE registro_asistencias SET id_estado = %s WHERE id_asistencia = %s
-        """, (data['id_estado'], id_asistencia))
-
+        # Actualizar estado
+        cursor.execute("UPDATE registro_asistencias SET id_estado = %s WHERE id_asistencia = %s", (data['id_estado'], id_asistencia))
         conn.commit()
+
         cursor.close()
         conn.close()
 
@@ -1235,8 +1232,9 @@ def actualizar_estado_asistencia(current_user_id, id_asistencia):
             conn.rollback()
         except:
             pass
-        app.logger.error(f'Error actualizando estado asistencia: {str(e)}')
+        print(f"Error en actualizar_estado_asistencia: {e}")
         return jsonify({'success': False, 'message': 'Error interno al actualizar estado'}), 500
+
 
 
 # ==============================================
