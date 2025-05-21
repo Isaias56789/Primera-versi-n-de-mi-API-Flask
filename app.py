@@ -1197,47 +1197,66 @@ def manejar_asistencias(current_user_id):
 @token_required
 def actualizar_asistencia(usuario_actual, id_asistencia):
     try:
-        conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
+        # Obtener los datos del JSON
+        datos = request.get_json()
+        id_empleado = datos.get('id_empleado')
+        id_turno = datos.get('id_turno')
+        id_estatus = datos.get('id_estatus')
+        fecha = datos.get('fecha')
+        hora_entrada = datos.get('hora_entrada')
+        hora_salida = datos.get('hora_salida')
 
-        # Verificar si la asistencia existe
-        cursor.execute("SELECT * FROM asistencias WHERE id_asistencia = %s", (id_asistencia,))
-        asistencia = cursor.fetchone()
-        print("Asistencia encontrada:", asistencia)
+        # Verificar que al menos un campo se está actualizando
+        if not any([id_empleado, id_turno, id_estatus, fecha, hora_entrada, hora_salida]):
+            return jsonify({'error': 'No hay datos para actualizar'}), 400
 
-        if asistencia is None:
-            return jsonify({'message': 'Asistencia no encontrada'}), 404
+        connection = get_connection()
+        with connection.cursor() as cursor:
+            # Verificar si la asistencia existe
+            cursor.execute('SELECT * FROM asistencias WHERE id_asistencia = %s', (id_asistencia,))
+            asistencia = cursor.fetchone()
 
-        # Obtener los datos enviados por el cliente
-        data = request.get_json()
-        print("Datos recibidos:", data)
+            if asistencia is None:
+                return jsonify({'error': 'Asistencia no encontrada'}), 404
 
-        id_estado = data.get('id_estado')
-        hora_asistencia = data.get('hora_asistencia')
+            # Construir dinámicamente el query
+            campos = []
+            valores = []
 
-        # Validar que los campos estén presentes
-        if id_estado is None or hora_asistencia is None:
-            return jsonify({'message': 'Faltan datos requeridos (id_estado u hora_asistencia)'}), 400
+            if id_empleado:
+                campos.append("id_empleado = %s")
+                valores.append(id_empleado)
+            if id_turno:
+                campos.append("id_turno = %s")
+                valores.append(id_turno)
+            if id_estatus:
+                campos.append("id_estatus = %s")
+                valores.append(id_estatus)
+            if fecha:
+                campos.append("fecha = %s")
+                valores.append(fecha)
+            if hora_entrada:
+                campos.append("hora_entrada = %s")
+                valores.append(hora_entrada)
+            if hora_salida:
+                campos.append("hora_salida = %s")
+                valores.append(hora_salida)
 
-        # Ejecutar la actualización
-        cursor.execute("""
-            UPDATE asistencias 
-            SET id_estado = %s, hora_asistencia = %s 
-            WHERE id_asistencia = %s
-        """, (id_estado, hora_asistencia, id_asistencia))
+            valores.append(id_asistencia)
 
-        conn.commit()
-        return jsonify({'message': 'Asistencia actualizada exitosamente'}), 200
+            query = f'''
+                UPDATE asistencias
+                SET {", ".join(campos)}
+                WHERE id_asistencia = %s
+            '''
+
+            cursor.execute(query, tuple(valores))
+            connection.commit()
+
+        return jsonify({'message': 'Asistencia actualizada correctamente'}), 200
 
     except Exception as e:
-        print("Error en actualizar_asistencia:", str(e))
-        return jsonify({'message': 'Error al actualizar la asistencia'}), 500
-
-    finally:
-        if conn.is_connected():
-            cursor.close()
-            conn.close()
-
+        return jsonify({'error': str(e)}), 500
 
 # ==============================================
 # CRUD para Estados
