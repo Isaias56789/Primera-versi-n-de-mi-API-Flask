@@ -1049,13 +1049,13 @@ def manejar_asistencias(current_user_id):
         try:
             fecha = request.args.get('fecha')
             id_horario = request.args.get('id_horario')
-            
+
             if not fecha:
                 return jsonify({
                     'success': False,
                     'message': 'El parámetro fecha es requerido'
                 }), 400
-            
+
             try:
                 datetime.strptime(fecha, '%Y-%m-%d')
             except ValueError:
@@ -1063,7 +1063,7 @@ def manejar_asistencias(current_user_id):
                     'success': False,
                     'message': 'Formato de fecha inválido. Use YYYY-MM-DD'
                 }), 400
-            
+
             query = """
             SELECT ra.*, 
                    h.dia, h.hora_inicio, h.hora_fin,
@@ -1084,17 +1084,17 @@ def manejar_asistencias(current_user_id):
             WHERE ra.fecha_asistencia = %s
             """
             params = [fecha]
-            
+
             if id_horario:
                 query += " AND ra.id_horario = %s"
                 params.append(id_horario)
-            
+
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
             cursor.execute(query, params)
             asistencias = cursor.fetchall()
 
-            # Convertir timedelta a string para evitar error JSON serialization
+            # Conversión de campos de hora para evitar errores de serialización
             for asistencia in asistencias:
                 for campo in ['hora_inicio', 'hora_fin', 'hora_asistencia']:
                     valor = asistencia.get(campo)
@@ -1104,17 +1104,17 @@ def manejar_asistencias(current_user_id):
                         minutos = (total_seconds % 3600) // 60
                         segundos = total_seconds % 60
                         asistencia[campo] = f"{horas:02d}:{minutos:02d}:{segundos:02d}"
-                    elif isinstance(valor, datetime):
+                    elif isinstance(valor, (datetime, time)):
                         asistencia[campo] = valor.strftime('%H:%M:%S')
 
             cursor.close()
             conn.close()
-            
+
             return jsonify({
                 'success': True,
                 'data': asistencias
             })
-            
+
         except Exception as e:
             app.logger.error(f'Error obteniendo asistencias: {str(e)}')
             return jsonify({
@@ -1126,7 +1126,7 @@ def manejar_asistencias(current_user_id):
         try:
             data = request.get_json()
 
-            # Validaciones básicas
+            # Validaciones
             campos_requeridos = ['id_horario', 'id_estado', 'fecha_asistencia', 'hora_asistencia']
             for campo in campos_requeridos:
                 if campo not in data or not data[campo]:
@@ -1147,7 +1147,7 @@ def manejar_asistencias(current_user_id):
             conn = get_db_connection()
             cursor = conn.cursor()
 
-            # Verificar si ya existe una asistencia para este horario y fecha
+            # Verificar existencia previa
             cursor.execute("""
             SELECT id_asistencia FROM registro_asistencias 
             WHERE id_horario = %s AND fecha_asistencia = %s
@@ -1158,7 +1158,7 @@ def manejar_asistencias(current_user_id):
                 conn.close()
                 return jsonify({'success': False, 'message': 'Ya existe un registro de asistencia para este horario y fecha'}), 400
 
-            # Insertar nueva asistencia
+            # Insertar nuevo registro
             cursor.execute("""
             INSERT INTO registro_asistencias 
             (id_horario, id_estado, fecha_asistencia, hora_asistencia) 
@@ -1192,79 +1192,44 @@ def manejar_asistencias(current_user_id):
                 'message': 'Error interno al registrar asistencia'
             }), 500
 
+
 @app.route('/asistencias/<int:id_asistencia>', methods=['PUT'])
 @token_required(['prefecto', 'administrador'])
 def actualizar_estado_asistencia(current_user_id, id_asistencia):
-    conn = None
     try:
         data = request.get_json()
 
         if 'id_estado' not in data or not data['id_estado']:
             return jsonify({'success': False, 'message': 'El campo "id_estado" es requerido'}), 400
 
-        if 'hora_asistencia' in data:
-            try:
-                datetime.strptime(data['hora_asistencia'], '%H:%M:%S')
-            except ValueError:
-                return jsonify({'success': False, 'message': 'Formato de hora inválido. Use HH:MM:SS'}), 400
-
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
 
-        # Verificar que la asistencia existe
-        cursor.execute("""
-            SELECT id_estado, hora_asistencia FROM registro_asistencias WHERE id_asistencia = %s
-        """, (id_asistencia,))
-        registro_actual = cursor.fetchone()
-
-        if not registro_actual:
+        # Verificar si existe la asistencia
+        cursor.execute("SELECT id_asistencia FROM registro_asistencias WHERE id_asistencia = %s", (id_asistencia,))
+        if not cursor.fetchone():
             cursor.close()
             conn.close()
             return jsonify({'success': False, 'message': 'Asistencia no encontrada'}), 404
 
-        # Verificar si hay cambios
-        estado_actual = registro_actual['id_estado']
-        hora_actual = registro_actual['hora_asistencia'].strftime('%H:%M:%S') if registro_actual['hora_asistencia'] else None
-        estado_nuevo = int(data['id_estado'])
-        hora_nueva = data.get('hora_asistencia')
+        # Actualizar estado
+        cursor.execute("""
+            UPDATE registro_asistencias SET id_estado = %s WHERE id_asistencia = %s
+        """, (data['id_estado'], id_asistencia))
 
-        cambio_estado = estado_actual != estado_nuevo
-        cambio_hora = hora_nueva is not None and hora_actual != hora_nueva
-
-        if not cambio_estado and not cambio_hora:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': True, 'message': 'No hay cambios para actualizar'})
-
-        # Construir query dinámicamente
-        query = "UPDATE registro_asistencias SET id_estado = %s"
-        params = [estado_nuevo]
-
-        if cambio_hora:
-            query += ", hora_asistencia = %s"
-            params.append(hora_nueva)
-
-        query += " WHERE id_asistencia = %s"
-        params.append(id_asistencia)
-
-        # Ejecutar actualización
-        cursor.execute(query, params)
         conn.commit()
-
         cursor.close()
         conn.close()
 
-        return jsonify({'success': True, 'message': 'Asistencia actualizada exitosamente'})
+        return jsonify({'success': True, 'message': 'Estado de asistencia actualizado exitosamente'})
 
     except Exception as e:
-        if conn:
-            try:
-                conn.rollback()
-            except:
-                pass
-        app.logger.error(f'Error actualizando asistencia: {str(e)}')
-        return jsonify({'success': False, 'message': 'Error interno al actualizar asistencia'}), 500
-
+        try:
+            conn.rollback()
+        except:
+            pass
+        app.logger.error(f'Error actualizando estado asistencia: {str(e)}')
+        return jsonify({'success': False, 'message': 'Error interno al actualizar estado'}), 500
 
 # ==============================================
 # CRUD para Estados
