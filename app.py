@@ -1194,79 +1194,35 @@ def manejar_asistencias(current_user_id):
             }), 500
 
 
-@app.route('/asistencias/<int:id_asistencia>', methods=['PUT'])
-@token_required(['prefecto', 'administrador'])
-def actualizar_estado_asistencia(current_user_id, id_asistencia):
-    conn = None
-    try:
-        data = request.get_json()
+asistencias_bp = Blueprint('asistencias', __name__)
 
-        if 'id_estado' not in data or not data['id_estado']:
-            return jsonify({'success': False, 'message': 'El campo "id_estado" es requerido'}), 400
+@asistencias_bp.route('/asistencias/<int:id_asistencia>', methods=['PUT'])
+def actualizar_asistencia(id_asistencia):
+    # Simulación de datos
+    asistencias = {
+        1: {"id": 1, "nombre": "Juan", "estado": "presente"},
+        2: {"id": 2, "nombre": "Ana", "estado": "ausente"},
+    }
 
-        if 'hora_asistencia' in data:
-            try:
-                datetime.strptime(data['hora_asistencia'], '%H:%M:%S')
-            except ValueError:
-                return jsonify({'success': False, 'message': 'Formato de hora inválido. Use HH:MM:SS'}), 400
+    if id_asistencia not in asistencias:
+        return jsonify({"error": "Asistencia no encontrada"}), 404
 
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+    datos = request.json
+    if not datos:
+        return jsonify({"error": "No se enviaron datos"}), 400
 
-        # Verificar que la asistencia existe
-        cursor.execute("""
-            SELECT id_estado, hora_asistencia FROM registro_asistencias WHERE id_asistencia = %s
-        """, (id_asistencia,))
-        registro_actual = cursor.fetchone()
+    nombre = datos.get("nombre")
+    estado = datos.get("estado")
 
-        if not registro_actual:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': False, 'message': 'Asistencia no encontrada'}), 404
+    if nombre:
+        asistencias[id_asistencia]["nombre"] = nombre
+    if estado:
+        asistencias[id_asistencia]["estado"] = estado
 
-        # Verificar si hay cambios
-        estado_actual = registro_actual['id_estado']
-        hora_actual = registro_actual['hora_asistencia'].strftime('%H:%M:%S') if registro_actual['hora_asistencia'] else None
-        estado_nuevo = int(data['id_estado'])
-        hora_nueva = data.get('hora_asistencia')
+    return jsonify({"message": "Asistencia actualizada", "asistencia": asistencias[id_asistencia]})
 
-        cambio_estado = estado_actual != estado_nuevo
-        cambio_hora = hora_nueva is not None and hora_actual != hora_nueva
-
-        if not cambio_estado and not cambio_hora:
-            cursor.close()
-            conn.close()
-            return jsonify({'success': True, 'message': 'No hay cambios para actualizar'})
-
-        # Construir query dinámicamente
-        query = "UPDATE registro_asistencias SET id_estado = %s"
-        params = [estado_nuevo]
-
-        if cambio_hora:
-            query += ", hora_asistencia = %s"
-            params.append(hora_nueva)
-
-        query += " WHERE id_asistencia = %s"
-        params.append(id_asistencia)
-
-        # Ejecutar actualización
-        cursor.execute(query, params)
-        conn.commit()
-
-        cursor.close()
-        conn.close()
-
-        return jsonify({'success': True, 'message': 'Asistencia actualizada exitosamente'})
-
-    except Exception as e:
-        if conn:
-            try:
-                conn.rollback()
-            except:
-                pass
-        app.logger.error(f'Error actualizando asistencia: {str(e)}')
-        return jsonify({'success': False, 'message': 'Error interno al actualizar asistencia'}), 500
-
+# Registrar blueprint
+app.register_blueprint(asistencias_bp)
 # ==============================================
 # CRUD para Estados
 # ==============================================
