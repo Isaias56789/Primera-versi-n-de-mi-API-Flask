@@ -15,6 +15,7 @@ tiempo_delta = timedelta(days=1)
 
 # Configurar la aplicación Flask
 app = Flask(__name__)
+app.register_blueprint(asistencias_bp)
 app.config['DEBUG'] = True if os.getenv('FLASK_ENV') == 'development' else False
 
 # Configurar logging
